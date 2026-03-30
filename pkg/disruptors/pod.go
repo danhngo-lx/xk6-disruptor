@@ -20,6 +20,11 @@ type PodDisruptor interface {
 	ProtocolFaultInjector
 	PodFaultInjector
 	NetworkFaultInjector
+	NetworkShapingFaultInjector
+	NetworkPartitionFaultInjector
+	CPUStressFaultInjector
+	MemoryStressFaultInjector
+	DNSFaultInjector
 }
 
 // PodDisruptorOptions defines options that controls the PodDisruptor's behavior
@@ -130,6 +135,141 @@ func (d *podDisruptor) InjectGrpcFaults(
 		fault:    fault,
 		duration: duration,
 		options:  options,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
+// InjectNetworkShapingFaults applies tc netem-based traffic shaping to the target pods
+func (d *podDisruptor) InjectNetworkShapingFaults(
+	ctx context.Context,
+	fault NetworkShapingFault,
+	duration time.Duration,
+) error {
+	command := PodNetworkShapingFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
+// InjectNetworkPartition blocks traffic between the target pods and the specified hosts
+func (d *podDisruptor) InjectNetworkPartition(
+	ctx context.Context,
+	fault NetworkPartitionFault,
+	duration time.Duration,
+) error {
+	command := PodNetworkPartitionFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
+// InjectCPUStress injects CPU stress in the target pods
+func (d *podDisruptor) InjectCPUStress(
+	ctx context.Context,
+	fault CPUStressFault,
+	duration time.Duration,
+) error {
+	command := PodCPUStressFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
+// InjectMemoryStress injects memory pressure in the target pods
+func (d *podDisruptor) InjectMemoryStress(
+	ctx context.Context,
+	fault MemoryStressFault,
+	duration time.Duration,
+) error {
+	command := PodMemoryStressFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
+// InjectDNSFaults injects DNS faults in the target pods
+func (d *podDisruptor) InjectDNSFaults(
+	ctx context.Context,
+	fault DNSFault,
+	duration time.Duration,
+) error {
+	command := PodDNSFaultCommand{
+		fault:    fault,
+		duration: duration,
 	}
 
 	visitor := NewPodAgentVisitor(

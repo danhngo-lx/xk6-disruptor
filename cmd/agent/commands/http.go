@@ -98,6 +98,9 @@ func BuildHTTPCmd(env runtime.Environment, config *agent.Config) *cobra.Command 
 	cmd.Flags().StringVarP(&disruption.ErrorBody, "body", "b", "", "body for injected faults")
 	cmd.Flags().StringSliceVarP(&disruption.Excluded, "exclude", "x", []string{}, "comma-separated list of path(s)"+
 		" to be excluded from disruption")
+	cmd.Flags().StringVar(&disruption.ModifyResponseBody, "modify-body", "", "replace response body with this string")
+	cmd.Flags().StringToStringVar(&disruption.ModifyResponseHeaders, "modify-header", map[string]string{},
+		"add or replace response headers (format: key=value, repeatable)")
 	cmd.Flags().BoolVar(&transparent, "transparent", true, "run as transparent proxy")
 	cmd.Flags().StringVar(&upstreamHost, "upstream-host", "localhost",
 		"upstream host to redirect traffic to")

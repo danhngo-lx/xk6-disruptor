@@ -30,6 +30,10 @@ type Disruption struct {
 	ErrorBody string
 	// List of url paths to be excluded from disruptions
 	Excluded []string
+	// ModifyResponseBody replaces the upstream response body with this string when non-empty
+	ModifyResponseBody string
+	// ModifyResponseHeaders adds or replaces headers in the upstream response
+	ModifyResponseHeaders map[string]string
 }
 
 // Proxy defines the parameters used by the proxy for processing http requests and its execution state
@@ -131,11 +135,21 @@ func (h *httpHandler) forward(rw http.ResponseWriter, req *http.Request, delay t
 		}
 	}
 
+	// Apply header modifications (overrides mirrored headers).
+	for key, value := range h.disruption.ModifyResponseHeaders {
+		rw.Header().Set(key, value)
+	}
+
 	// Mirror status code.
 	rw.WriteHeader(response.StatusCode)
 
-	// ignore errors writing body, nothing to do.
-	_, _ = io.Copy(rw, response.Body)
+	// Apply body modification or mirror upstream body.
+	if h.disruption.ModifyResponseBody != "" {
+		_, _ = rw.Write([]byte(h.disruption.ModifyResponseBody))
+	} else {
+		// ignore errors writing body, nothing to do.
+		_, _ = io.Copy(rw, response.Body)
+	}
 }
 
 // injectError waits sleeps the duration specified in delay and then writes the configured error downstream.

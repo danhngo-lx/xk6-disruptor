@@ -51,7 +51,7 @@ func FindPort(port intstr.IntOrString, pod corev1.Pod) (intstr.IntOrString, erro
 		}
 	}
 
-	return intstr.NullValue, fmt.Errorf("pod %q does exports port %q", pod.Name, port.Str())
+	return intstr.NullValue, fmt.Errorf("pod %q does not export port %q", pod.Name, port.Str())
 }
 
 // HasHostNetwork returns whether a pod has HostNetwork enabled, i.e. it shares the host's network namespace.

@@ -45,6 +45,10 @@ type HTTPFault struct {
 	ErrorBody string `js:"errorBody"`
 	// Comma-separated list of url paths to be excluded from disruptions
 	Exclude string
+	// ModifyResponseBody replaces the upstream response body with this string when non-empty
+	ModifyResponseBody string `js:"modifyResponseBody"`
+	// ModifyResponseHeaders adds or replaces headers in the upstream response
+	ModifyResponseHeaders map[string]string `js:"modifyResponseHeaders"`
 }
 
 // GrpcFault specifies a fault to be injected in grpc requests

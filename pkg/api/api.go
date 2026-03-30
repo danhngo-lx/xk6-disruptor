@@ -154,11 +154,171 @@ func (p *jsPodFaultInjector) TerminatePods(args ...sobek.Value) {
 	}
 }
 
+// jsDNSFaultInjector implements the JS interface for injecting DNS faults
+type jsDNSFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.DNSFaultInjector
+}
+
+// InjectDNSFaults is a proxy method. Validates parameters and delegates to the DNS fault injector method
+func (p *jsDNSFaultInjector) InjectDNSFaults(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("DNSFault and duration are required"))
+	}
+
+	fault := disruptors.DNSFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.DNSFaultInjector.InjectDNSFaults(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNetworkShapingFaultInjector implements the JS interface for injecting network shaping faults
+type jsNetworkShapingFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NetworkShapingFaultInjector
+}
+
+// InjectNetworkShapingFaults is a proxy method. Validates parameters and delegates to the network shaping fault injector
+func (p *jsNetworkShapingFaultInjector) InjectNetworkShapingFaults(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("NetworkShapingFault and duration are required"))
+	}
+
+	fault := disruptors.NetworkShapingFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.NetworkShapingFaultInjector.InjectNetworkShapingFaults(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNetworkPartitionFaultInjector implements the JS interface for injecting network partition faults
+type jsNetworkPartitionFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NetworkPartitionFaultInjector
+}
+
+// InjectNetworkPartition is a proxy method. Validates parameters and delegates to the network partition fault injector
+func (p *jsNetworkPartitionFaultInjector) InjectNetworkPartition(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("NetworkPartitionFault and duration are required"))
+	}
+
+	fault := disruptors.NetworkPartitionFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.NetworkPartitionFaultInjector.InjectNetworkPartition(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsCPUStressFaultInjector implements the JS interface for injecting CPU stress faults
+type jsCPUStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.CPUStressFaultInjector
+}
+
+// InjectCPUStress is a proxy method. Validates parameters and delegates to the CPU stress fault injector method
+func (p *jsCPUStressFaultInjector) InjectCPUStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("CPUStressFault and duration are required"))
+	}
+
+	fault := disruptors.CPUStressFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.CPUStressFaultInjector.InjectCPUStress(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsMemoryStressFaultInjector implements the JS interface for injecting memory stress faults
+type jsMemoryStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.MemoryStressFaultInjector
+}
+
+// InjectMemoryStress is a proxy method. Validates parameters and delegates to the memory stress fault injector method
+func (p *jsMemoryStressFaultInjector) InjectMemoryStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("MemoryStressFault and duration are required"))
+	}
+
+	fault := disruptors.MemoryStressFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.MemoryStressFaultInjector.InjectMemoryStress(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
 type jsPodDisruptor struct {
 	jsDisruptor
 	jsProtocolFaultInjector
 	jsPodFaultInjector
 	jsNetworkFaultInjector
+	jsNetworkShapingFaultInjector
+	jsNetworkPartitionFaultInjector
+	jsCPUStressFaultInjector
+	jsMemoryStressFaultInjector
+	jsDNSFaultInjector
 }
 
 // buildJsPodDisruptor builds a goja object that implements the PodDisruptor API
@@ -187,6 +347,31 @@ func buildJsPodDisruptor(
 			ctx:                  ctx,
 			rt:                   rt,
 			NetworkFaultInjector: disruptor,
+		},
+		jsNetworkShapingFaultInjector: jsNetworkShapingFaultInjector{
+			ctx:                         ctx,
+			rt:                          rt,
+			NetworkShapingFaultInjector: disruptor,
+		},
+		jsNetworkPartitionFaultInjector: jsNetworkPartitionFaultInjector{
+			ctx:                           ctx,
+			rt:                            rt,
+			NetworkPartitionFaultInjector: disruptor,
+		},
+		jsCPUStressFaultInjector: jsCPUStressFaultInjector{
+			ctx:                  ctx,
+			rt:                   rt,
+			CPUStressFaultInjector: disruptor,
+		},
+		jsMemoryStressFaultInjector: jsMemoryStressFaultInjector{
+			ctx:                       ctx,
+			rt:                        rt,
+			MemoryStressFaultInjector: disruptor,
+		},
+		jsDNSFaultInjector: jsDNSFaultInjector{
+			ctx:              ctx,
+			rt:               rt,
+			DNSFaultInjector: disruptor,
 		},
 	}
 

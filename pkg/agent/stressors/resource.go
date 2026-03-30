@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1" //nolint:gosec
 	"fmt"
+	"os"
 	"runtime"
 	"time"
 )
@@ -74,6 +75,44 @@ func (s *CPUStressor) Apply(ctx context.Context) error {
 			scheduleTime = float64(time.Since(startSleep)) - idle
 		}
 	}
+}
+
+// MemoryDisruption defines a disruption that holds a given amount of memory
+type MemoryDisruption struct {
+	// Bytes is the number of bytes to allocate and hold
+	Bytes int64
+}
+
+// MemoryStressor defines a stressor that allocates and holds a given amount of memory
+type MemoryStressor struct {
+	Disruption MemoryDisruption
+}
+
+// NewMemoryStressor creates a new MemoryStressor
+func NewMemoryStressor(disruption MemoryDisruption) (*MemoryStressor, error) {
+	if disruption.Bytes <= 0 {
+		return nil, fmt.Errorf("bytes must be greater than zero")
+	}
+
+	return &MemoryStressor{Disruption: disruption}, nil
+}
+
+// Apply allocates and holds memory for the given duration
+func (s *MemoryStressor) Apply(ctx context.Context, duration time.Duration) error {
+	pageSize := int64(os.Getpagesize())
+	mem := make([]byte, s.Disruption.Bytes)
+	// Touch every page to force physical memory allocation
+	for i := int64(0); i < s.Disruption.Bytes; i += pageSize {
+		mem[i] = 1
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+
+	<-ctx.Done()
+	runtime.KeepAlive(mem)
+
+	return nil
 }
 
 // ResourceDisruption defines a disruption that stress the CPU and Memory of a target
