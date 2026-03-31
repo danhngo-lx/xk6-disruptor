@@ -79,6 +79,18 @@ func PodNames(pods []corev1.Pod) []string {
 	return names
 }
 
+// PodIPs returns the IP addresses of the pods in a list, skipping any pods that have no IP yet.
+func PodIPs(pods []corev1.Pod) []string {
+	ips := make([]string, 0, len(pods))
+	for _, pod := range pods {
+		if pod.Status.PodIP != "" {
+			ips = append(ips, pod.Status.PodIP)
+		}
+	}
+
+	return ips
+}
+
 // Sample a subset of the given list of Pods. The count is defined as a int or a string representing a percentage.
 // If the count is a percentage and there are no enough elements in the pod list, the number is rounded up.
 // If the list is not empty, at least one element is returned

@@ -89,6 +89,15 @@ func (d *podDisruptor) Targets(ctx context.Context) ([]string, error) {
 	return utils.PodNames(targets), nil
 }
 
+func (d *podDisruptor) TargetIPs(ctx context.Context) ([]string, error) {
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return utils.PodIPs(targets), nil
+}
+
 // InjectHTTPFaults injects faults in the http requests sent to the disruptor's targets
 func (d *podDisruptor) InjectHTTPFaults(
 	ctx context.Context,

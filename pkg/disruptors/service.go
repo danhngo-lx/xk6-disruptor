@@ -150,6 +150,15 @@ func (d *serviceDisruptor) Targets(ctx context.Context) ([]string, error) {
 	return utils.PodNames(targets), nil
 }
 
+func (d *serviceDisruptor) TargetIPs(ctx context.Context) ([]string, error) {
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return utils.PodIPs(targets), nil
+}
+
 // TerminatePods terminates a subset of the target pods of the disruptor
 func (d *serviceDisruptor) TerminatePods(
 	ctx context.Context,

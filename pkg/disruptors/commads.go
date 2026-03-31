@@ -120,6 +120,10 @@ func buildHTTPFaultCmd(
 		cmd = append(cmd, "-p", fmt.Sprint(options.ProxyPort))
 	}
 
+	if options.NonTransparent {
+		cmd = append(cmd, "--transparent=false")
+	}
+
 	cmd = append(cmd, "--upstream-host", targetAddress)
 
 	return cmd

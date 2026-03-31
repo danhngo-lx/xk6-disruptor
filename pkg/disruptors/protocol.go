@@ -21,6 +21,13 @@ type ProtocolFaultInjector interface {
 type HTTPDisruptionOptions struct {
 	// Port used by the agent for listening
 	ProxyPort uint `js:"proxyPort"`
+	// NonTransparent disables iptables-based traffic redirection when set to true.
+	// By default (false) the agent installs iptables rules that transparently redirect
+	// traffic on the target port through the proxy. When set to true no iptables rules are
+	// installed and the load test must send requests directly to ProxyPort on the pod IP.
+	// This is the recommended option when a service mesh such as Istio is present and its
+	// own iptables rules conflict with the disruptor's.
+	NonTransparent bool `js:"nonTransparent"`
 }
 
 // GrpcDisruptionOptions defines options for the injection of grpc faults in a target pod

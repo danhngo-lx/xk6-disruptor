@@ -57,6 +57,18 @@ func (p *jsDisruptor) Targets() sobek.Value {
 	return p.rt.ToValue(targets)
 }
 
+// TargetIPs is a proxy method that returns the pod IP addresses of the disruptor's targets.
+// Useful when transparent mode is disabled and the load test must send requests directly to the
+// proxy port on each pod IP (bypassing the Kubernetes service and any service-mesh iptables rules).
+func (p *jsDisruptor) TargetIPs() sobek.Value {
+	ips, err := p.Disruptor.TargetIPs(p.ctx)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error getting target IPs: %w", err))
+	}
+
+	return p.rt.ToValue(ips)
+}
+
 // jsProtocolFaultInjector implements the JS interface for jsProtocolFaultInjector
 type jsProtocolFaultInjector struct {
 	ctx context.Context // this context controls the object's lifecycle

@@ -87,6 +87,18 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 | DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs |
 | Pod termination | `terminatePods` | Terminate a random subset of target pods |
 
+## Service mesh compatibility
+
+When running inside an **Istio**-enabled namespace, Istio's `istio-init` container installs iptables rules that intercept all inbound traffic before xk6-disruptor can redirect it. The recommended fix is to exclude the target app port from Istio's interception via a Deployment annotation:
+
+```bash
+kubectl patch deployment <name> -n <namespace> \
+  --type='json' \
+  -p='[{"op":"add","path":"/spec/template/metadata/annotations","value":{"traffic.sidecar.istio.io/excludeInboundPorts":"<port>"}}]'
+```
+
+If you cannot modify the Deployment, use `nonTransparent: true` in `HTTPDisruptionOptions` and target pod IPs directly (obtained via `disruptor.targetIPs()`). See the [architecture guide](docs/01-development/02-architecture.md#service-mesh-compatibility) for details.
+
 ## Use cases
 
 The main use case for xk6-disruptor is to test the resiliency of an application of diverse types of disruptions by reproducing their effects without reproducing their root causes. For example, inject delays in the HTTP requests an application makes to a service without having to stress or interfere with the infrastructure (network, nodes) on which the service runs or affect other workloads in unexpected ways.
