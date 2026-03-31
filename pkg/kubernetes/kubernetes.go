@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"

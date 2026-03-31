@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
-	"github.com/grafana/xk6-disruptor/pkg/runtime/profiler"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime/profiler"
 )
 
 // Config maintains the configuration for the execution of the agent

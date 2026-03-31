@@ -3,7 +3,7 @@ package ping
 import (
 	"testing"
 
-	grpcutils "github.com/grafana/xk6-disruptor/pkg/testutils/grpc"
+	grpcutils "github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

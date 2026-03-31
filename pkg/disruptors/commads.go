@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
-	"github.com/grafana/xk6-disruptor/pkg/utils"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
 )

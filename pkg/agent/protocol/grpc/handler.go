@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent/protocol"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

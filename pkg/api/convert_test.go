@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 )
 
 func Test_Conversions(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 	corev1 "k8s.io/api/core/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth" // initialize auth plugins
 )

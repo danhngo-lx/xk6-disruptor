@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/grafana/xk6-disruptor/pkg/agent/protocol"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/grpc/ping"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/protocol"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc/ping"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/cluster"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/fetch"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/kubectl"
-	"github.com/grafana/xk6-disruptor/pkg/utils"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/cluster"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/fetch"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/kubectl"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
 )
 
 // PostInstall defines a function that runs after the cluster is created

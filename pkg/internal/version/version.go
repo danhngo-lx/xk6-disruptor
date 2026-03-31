@@ -5,7 +5,7 @@ import (
 	"runtime/debug"
 )
 
-const xk6DisruptorPath = "github.com/grafana/xk6-disruptor"
+const xk6DisruptorPath = "github.com/danhngo-lx/xk6-disruptor"
 
 // DisruptorVersion returns the version of the currently executed disruptor
 func DisruptorVersion() string {

@@ -3,7 +3,7 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
 )
 
 // TrafficRedirectionSpec specifies the redirection of traffic to a destination

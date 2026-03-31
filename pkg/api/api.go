@@ -2,7 +2,7 @@
 // allowing for validations and type conversions when needed
 //
 // The implementation of the JS API follows the design described in
-// https://github.com/grafana/xk6-disruptor/blob/fix-context-usage/docs/01-development/design-docs/002-js-api-implementation.md
+// https://github.com/danhngo-lx/xk6-disruptor/blob/fix-context-usage/docs/01-development/design-docs/002-js-api-implementation.md
 package api
 
 import (
@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/grafana/sobek"
-	"github.com/grafana/xk6-disruptor/pkg/disruptors"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/disruptors"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
 	"go.k6.io/k6/js/common"
 )
 

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/deploy"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/kubernetes/namespace"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/deploy"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/kubernetes/namespace"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
 
 	"github.com/testcontainers/testcontainers-go/modules/k3s"
 

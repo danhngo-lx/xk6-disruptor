@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent"
-	"github.com/grafana/xk6-disruptor/pkg/agent/network"
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/network"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
 	"github.com/spf13/cobra"
 )
 

@@ -11,8 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/assertions"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/assertions"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
 )
 
 const (

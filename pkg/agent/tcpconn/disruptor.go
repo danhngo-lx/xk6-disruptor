@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/florianl/go-nfqueue/v2"
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
 )
 
 // Disruptor applies TCP Connection disruptions by dropping connections according to a Dropper. A filter decides which

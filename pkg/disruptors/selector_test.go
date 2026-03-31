@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
-	"github.com/grafana/xk6-disruptor/pkg/utils"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"

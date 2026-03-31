@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/echotester"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/echotester"
 
 	"github.com/docker/go-connections/nat"
 	"github.com/testcontainers/testcontainers-go"

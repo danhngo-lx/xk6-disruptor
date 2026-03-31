@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
-	"github.com/grafana/xk6-disruptor/pkg/runtime/profiler"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime/profiler"
 )
 
 // FakeProtocolDisruptor implements a fake protocol Disruptor

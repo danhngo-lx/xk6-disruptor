@@ -14,8 +14,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/grpc/dynamic"
-	tcutils "github.com/grafana/xk6-disruptor/pkg/testutils/testcontainers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc/dynamic"
+	tcutils "github.com/danhngo-lx/xk6-disruptor/pkg/testutils/testcontainers"
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/grpc"

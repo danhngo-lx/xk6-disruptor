@@ -3,7 +3,7 @@ package kubernetes
 import (
 	"context"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"

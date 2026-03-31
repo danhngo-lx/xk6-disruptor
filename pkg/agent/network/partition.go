@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
 )
 
 // PartitionDirection defines which traffic direction to block

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent/protocol"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/protocol"
 )
 
 // Disruption specifies disruptions in http requests
@@ -212,7 +212,7 @@ func (p *proxy) Force() error {
 
 // supportedMetrics is a helper function that returns the metrics that the http proxy supports and thus should be
 // pre-initialized to zero. This function is defined due to the testing limitations mentioned in
-// https://github.com/grafana/xk6-disruptor/issues/314, as httpHandler tests currently need this information.
+// https://github.com/danhngo-lx/xk6-disruptor/issues/314, as httpHandler tests currently need this information.
 func supportedMetrics() []string {
 	return []string{
 		protocol.MetricRequests,

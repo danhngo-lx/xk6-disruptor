@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent"
-	"github.com/grafana/xk6-disruptor/pkg/agent/tcpconn"
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/tcpconn"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
 	"github.com/spf13/cobra"
 )
 

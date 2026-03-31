@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/grafana/xk6-disruptor/pkg/runtime/profiler"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime/profiler"
 )
 
 // Environment abstracts the execution environment of a process.

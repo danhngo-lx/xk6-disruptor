@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/fixtures"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/fixtures"
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/k3s"

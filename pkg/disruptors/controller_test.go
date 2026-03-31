@@ -12,8 +12,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
 )
 
 type fakeCommand struct {

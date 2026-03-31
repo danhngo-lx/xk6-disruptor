@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/grafana/xk6-disruptor/pkg/runtime/profiler"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime/profiler"
 )
 
 // FakeExecutor is an instance of a ProcessExecutor that keeps the history

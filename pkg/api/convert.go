@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 )
 
 // Convert converts from a generic object received from the JS interface via goja into a go type.

@@ -6,7 +6,7 @@ package tcpconn_test
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/echotester"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/echotester"
 	"math/rand"
 	"net"
 	"path/filepath"

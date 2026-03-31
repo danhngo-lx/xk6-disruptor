@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent"
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
 )
 
 // ErrNoRequests is returned when a proxy supports MetricRequests and returns a value of 0 for it.

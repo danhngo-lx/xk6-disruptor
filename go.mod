@@ -1,4 +1,4 @@
-module github.com/grafana/xk6-disruptor
+module github.com/danhngo-lx/xk6-disruptor
 
 go 1.24.0
 

@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

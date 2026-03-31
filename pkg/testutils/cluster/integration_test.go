@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -13,14 +13,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sintstr "k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/grafana/xk6-disruptor/pkg/disruptors"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/checks"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/cluster"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/deploy"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/fixtures"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/kubernetes/namespace"
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/disruptors"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/checks"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/cluster"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/deploy"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/fixtures"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/kubernetes/namespace"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 )
 
 func Test_ServiceDisruptor(t *testing.T) {

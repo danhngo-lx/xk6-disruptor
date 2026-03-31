@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
 )
 
 // Test_rules checks that the queue returns the correct rules for a given config and disruption.

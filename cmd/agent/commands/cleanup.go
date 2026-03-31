@@ -3,7 +3,7 @@ package commands
 import (
 	"syscall"
 
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
 	"github.com/spf13/cobra"
 )
 

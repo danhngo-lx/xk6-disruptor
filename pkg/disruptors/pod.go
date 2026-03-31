@@ -5,10 +5,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
-	"github.com/grafana/xk6-disruptor/pkg/utils"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
 )
 
 // DefaultTargetPort defines the default value for a target HTTP

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/echotester"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/grpc/dynamic"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/echotester"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc/dynamic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )

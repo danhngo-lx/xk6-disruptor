@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/internal/version"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/internal/version"
 
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes/helpers"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 
 	corev1 "k8s.io/api/core/v1"
 )

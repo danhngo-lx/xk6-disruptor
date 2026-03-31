@@ -6,10 +6,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent"
-	agentdns "github.com/grafana/xk6-disruptor/pkg/agent/dns"
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
-	"github.com/grafana/xk6-disruptor/pkg/runtime"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent"
+	agentdns "github.com/danhngo-lx/xk6-disruptor/pkg/agent/dns"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/runtime"
 	"github.com/spf13/cobra"
 )
 

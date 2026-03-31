@@ -3,8 +3,8 @@ package dynamic
 import (
 	"testing"
 
-	grpcutil "github.com/grafana/xk6-disruptor/pkg/testutils/grpc"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/grpc/ping"
+	grpcutil "github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/grpc/ping"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"

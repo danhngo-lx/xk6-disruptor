@@ -3,7 +3,7 @@ package protocol_test
 import (
 	"testing"
 
-	"github.com/grafana/xk6-disruptor/pkg/agent/protocol"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/agent/protocol"
 )
 
 func TestMetricMap(t *testing.T) {

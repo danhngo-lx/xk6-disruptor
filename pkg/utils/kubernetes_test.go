@@ -8,8 +8,8 @@ import (
 
 	k8sintstr "k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 )
 
 func buildPodWithPort(name string, portName string, port int32) corev1.Pod {

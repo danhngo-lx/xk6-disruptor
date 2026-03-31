@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grafana/xk6-disruptor/cmd/e2e-cluster/commands"
+	"github.com/danhngo-lx/xk6-disruptor/cmd/e2e-cluster/commands"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/e2e/cluster"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/e2e/cluster"
 	"github.com/spf13/cobra"
 )
 

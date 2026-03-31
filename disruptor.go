@@ -10,8 +10,8 @@ import (
 
 	"github.com/grafana/sobek"
 
-	"github.com/grafana/xk6-disruptor/pkg/api"
-	"github.com/grafana/xk6-disruptor/pkg/kubernetes"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/api"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
 )
 
 func init() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 )
 
 // ProtocolFaultInjector defines the methods for injecting protocol faults

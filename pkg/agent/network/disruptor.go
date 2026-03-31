@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/iptables"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/iptables"
 )
 
 // Disruptor applies network disruptions by dropping packets using iptables DROP rules.

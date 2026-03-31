@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/xk6-disruptor/pkg/testutils/command"
-	"github.com/grafana/xk6-disruptor/pkg/testutils/kubernetes/builders"
-	"github.com/grafana/xk6-disruptor/pkg/types/intstr"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/command"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/testutils/kubernetes/builders"
+	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 
 	corev1 "k8s.io/api/core/v1"
 )
