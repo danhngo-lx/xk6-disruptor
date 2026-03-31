@@ -9,8 +9,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  DISRUPTOR_IMAGE_NAME: grafana/xk6-disruptor
-  AGENT_IMAGE_NAME: grafana/xk6-disruptor-agent
+  DISRUPTOR_IMAGE_NAME: danhngo-lx/xk6-disruptor
+  AGENT_IMAGE_NAME: danhngo-lx/xk6-disruptor-agent
 
 permissions:
   contents: read
