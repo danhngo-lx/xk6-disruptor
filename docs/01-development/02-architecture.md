@@ -2,7 +2,7 @@
 
 The xk6-disruptor consists of two main components: a k6 extension and the xk6-disruptor-agent. The xk6-disruptor-agent is a command line tool that can inject disruptions in the target system where it runs. The xk6-disruptor extension provides an API for injecting faults into a target system using the xk6-disruptor as a backend tool. The xk6-disruptor extension will install the agent in the target and send commands in order to inject the desired faults.
 
-The xk6-disruptor-agent is provided as an Docker image that can be pulled from the [xk6-disruptor repository](https://github.com/grafana/xk6-disruptor/pkgs/container/xk6-disruptor-agent) as or [build locally](./01-contributing.md#building-the-xk6-disruptor-agent-image).
+The xk6-disruptor-agent is provided as a Docker image built from `images/agent/Dockerfile`. See [Agent Image Configuration](#agent-image-configuration) for how to configure which image is used.
 
 The agent offers a series of commands that inject different types of disruptions. It can run standalone, as a CLI application to facilitate debugging.
 
@@ -16,6 +16,15 @@ All disruptors expose the following utility methods:
 |---|---|---|
 | `targets()` | `string[]` | Names of the pods currently selected by the disruptor |
 | `targetIPs()` | `string[]` | IP addresses of the pods currently selected by the disruptor |
+
+### Disruptor options
+
+Both `PodDisruptor` and `ServiceDisruptor` accept an options object as their last constructor argument:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `injectTimeout` | `string \| number` | `"30s"` | How long to wait for the agent ephemeral container to reach Running state. Negative value disables waiting. |
+| `agentImage` | `string` | *(see [Agent Image Configuration](#agent-image-configuration))* | Full container image reference for the agent, e.g. `"ghcr.io/myorg/xk6-disruptor-agent:latest"`. Overrides the env var and build-time default. |
 
 ### PodDisruptor
 
@@ -99,6 +108,44 @@ export function runDisrupt() {
 ```
 
 This approach bypasses the service address, so it is only suitable when the k6 script directly controls the load generation target.
+
+## Agent Image Configuration
+
+The agent container image is resolved in the following priority order (first match wins):
+
+| Priority | Method | Example |
+|---|---|---|
+| 1 (highest) | `agentImage` option in the k6 script | `agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:v1.2.3'` |
+| 2 | `XK6_DISRUPTOR_AGENT_IMAGE` environment variable | `XK6_DISRUPTOR_AGENT_IMAGE=ghcr.io/myorg/xk6-disruptor-agent:latest k6 run script.js` |
+| 3 | Build-time ldflags | `-ldflags "-X .../version.agentImageRepo=ghcr.io/myorg/xk6-disruptor-agent"` |
+| 4 (default) | Compiled-in default | `ghcr.io/danhngo-lx/xk6-disruptor-agent:<version or latest>` |
+
+### Building the agent image locally
+
+The agent Dockerfile at `images/agent/Dockerfile` uses a multi-stage build and compiles the agent binary from source. Run from the **repository root**:
+
+```bash
+docker build -t ghcr.io/danhngo-lx/xk6-disruptor-agent:latest -f images/agent/Dockerfile .
+```
+
+To push to a registry:
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u <username> --password-stdin
+
+docker build -t ghcr.io/danhngo-lx/xk6-disruptor-agent:latest -f images/agent/Dockerfile .
+docker push ghcr.io/danhngo-lx/xk6-disruptor-agent:latest
+```
+
+### Specifying the image in a k6 script
+
+```js
+const disruptor = new PodDisruptor({
+  namespace: 'my-ns',
+  select: { labels: { app: 'my-app' } },
+  agentImage: 'ghcr.io/danhngo-lx/xk6-disruptor-agent:latest',
+});
+```
 
 ## Agent Commands
 

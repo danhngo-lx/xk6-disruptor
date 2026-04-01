@@ -87,6 +87,24 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 | DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs |
 | Pod termination | `terminatePods` | Terminate a random subset of target pods |
 
+## Agent image configuration
+
+xk6-disruptor injects an ephemeral container (`xk6-disruptor-agent`) into target pods to apply faults. The container image used can be configured at three levels:
+
+| Level | How |
+|---|---|
+| Per script | `agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:latest'` in disruptor options |
+| Per run | `XK6_DISRUPTOR_AGENT_IMAGE=ghcr.io/myorg/xk6-disruptor-agent:latest k6 run script.js` |
+| Build time | `-ldflags "-X .../version.agentImageRepo=ghcr.io/myorg/xk6-disruptor-agent"` when building k6 |
+
+Build the agent image locally from the repo root:
+
+```bash
+docker build -t ghcr.io/danhngo-lx/xk6-disruptor-agent:latest -f images/agent/Dockerfile .
+```
+
+See the [architecture guide](docs/01-development/02-architecture.md#agent-image-configuration) for full details.
+
 ## Service mesh compatibility
 
 When running inside an **Istio**-enabled namespace, Istio's `istio-init` container installs iptables rules that intercept all inbound traffic before xk6-disruptor can redirect it. The recommended fix is to exclude the target app port from Istio's interception via a Deployment annotation:
