@@ -102,6 +102,24 @@ func (d *podDisruptor) TargetIPs(ctx context.Context) ([]string, error) {
 	return utils.PodIPs(targets), nil
 }
 
+// Cleanup stops any running agent process on each target pod. It execs the cleanup
+// command directly into the existing xk6-agent ephemeral container without injecting
+// a new one. If no agent is running on a pod the error is silently ignored.
+func (d *podDisruptor) Cleanup(ctx context.Context) error {
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	cleanupCmd := buildCleanupCmd()
+	for _, pod := range targets {
+		// best-effort: ignore errors (container not found = no agent running)
+		_, _, _ = d.helper.Exec(ctx, pod.Name, "xk6-agent", cleanupCmd, []byte{})
+	}
+
+	return nil
+}
+
 // InjectHTTPFaults injects faults in the http requests sent to the disruptor's targets
 func (d *podDisruptor) InjectHTTPFaults(
 	ctx context.Context,

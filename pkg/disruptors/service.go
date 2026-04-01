@@ -163,6 +163,21 @@ func (d *serviceDisruptor) TargetIPs(ctx context.Context) ([]string, error) {
 	return utils.PodIPs(targets), nil
 }
 
+// Cleanup stops any running agent process on each target pod.
+func (d *serviceDisruptor) Cleanup(ctx context.Context) error {
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	cleanupCmd := buildCleanupCmd()
+	for _, pod := range targets {
+		_, _, _ = d.helper.Exec(ctx, pod.Name, "xk6-agent", cleanupCmd, []byte{})
+	}
+
+	return nil
+}
+
 // TerminatePods terminates a subset of the target pods of the disruptor
 func (d *serviceDisruptor) TerminatePods(
 	ctx context.Context,

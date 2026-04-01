@@ -69,6 +69,17 @@ func (p *jsDisruptor) TargetIPs() sobek.Value {
 	return p.rt.ToValue(ips)
 }
 
+// Cleanup stops any running agent processes on the disruptor's target pods. It is safe
+// to call even when no agent is running — pods with no active agent are silently skipped.
+// Call this in setup() before injecting faults to ensure no stale agent from a previous
+// interrupted run is still active.
+func (p *jsDisruptor) Cleanup() {
+	err := p.Disruptor.Cleanup(p.ctx)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error cleaning up agents: %w", err))
+	}
+}
+
 // jsProtocolFaultInjector implements the JS interface for jsProtocolFaultInjector
 type jsProtocolFaultInjector struct {
 	ctx context.Context // this context controls the object's lifecycle

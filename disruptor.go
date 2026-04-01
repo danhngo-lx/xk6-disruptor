@@ -9,12 +9,19 @@ import (
 	"go.k6.io/k6/js/modules"
 
 	"github.com/grafana/sobek"
+	"github.com/go-logr/logr"
+	"k8s.io/klog/v2"
 
 	"github.com/danhngo-lx/xk6-disruptor/pkg/api"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
 )
 
 func init() {
+	// Suppress verbose internal logs from the Kubernetes client-go SPDY exec transport
+	// (e.g. "Stream added", "Data frame received"). These are klog level 4+ messages
+	// that add noise to k6 output without providing actionable information.
+	klog.SetLogger(logr.Discard())
+
 	modules.Register("k6/x/disruptor", new(RootModule))
 }
 

@@ -401,3 +401,13 @@ func (c PodDNSFaultCommand) Commands(_ corev1.Pod) (VisitCommands, error) {
 		Cleanup: buildCleanupCmd(),
 	}, nil
 }
+
+// PodCleanupCommand implements PodVisitCommand for stopping any running agent on a pod.
+type PodCleanupCommand struct{}
+
+// Commands returns the cleanup command with no follow-up cleanup needed.
+func (c PodCleanupCommand) Commands(_ corev1.Pod) (VisitCommands, error) {
+	return VisitCommands{
+		Exec: buildCleanupCmd(),
+	}, nil
+}
