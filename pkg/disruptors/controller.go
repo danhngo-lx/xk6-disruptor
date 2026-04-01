@@ -120,10 +120,15 @@ func (c *PodAgentVisitor) injectDisruptorAgent(ctx context.Context, pod corev1.P
 		runAsNonRoot = false
 	)
 
+	image := c.options.AgentImage
+	if image == "" {
+		image = version.AgentImage()
+	}
+
 	agentContainer := corev1.EphemeralContainer{
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 			Name:            "xk6-agent",
-			Image:           version.AgentImage(),
+			Image:           image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			SecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{
@@ -183,6 +188,9 @@ func (c *PodAgentVisitor) Visit(ctx context.Context, pod corev1.Pod) error {
 type PodAgentVisitorOptions struct {
 	// Defines the timeout for injecting the agent
 	Timeout time.Duration
+	// AgentImage overrides the container image used for the injected agent.
+	// When empty, version.AgentImage() is used.
+	AgentImage string
 }
 
 // PodVisitCommand is a command that can be run on a given pod.

@@ -32,6 +32,10 @@ type PodDisruptorOptions struct {
 	// timeout when waiting agent to be injected in seconds. A zero value forces default.
 	// A Negative value forces no waiting.
 	InjectTimeout time.Duration `js:"injectTimeout"`
+	// AgentImage overrides the container image used for the injected agent ephemeral container.
+	// When empty, the image is resolved from the XK6_DISRUPTOR_AGENT_IMAGE environment variable
+	// or the build-time default.
+	AgentImage string `js:"agentImage"`
 }
 
 // podDisruptor is an instance of a PodDisruptor that uses a PodController to interact with target pods
@@ -119,7 +123,7 @@ func (d *podDisruptor) InjectHTTPFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -148,7 +152,7 @@ func (d *podDisruptor) InjectGrpcFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -175,7 +179,7 @@ func (d *podDisruptor) InjectNetworkShapingFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -202,7 +206,7 @@ func (d *podDisruptor) InjectNetworkPartition(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -229,7 +233,7 @@ func (d *podDisruptor) InjectCPUStress(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -256,7 +260,7 @@ func (d *podDisruptor) InjectMemoryStress(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -283,7 +287,7 @@ func (d *podDisruptor) InjectDNSFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -332,7 +336,7 @@ func (d *podDisruptor) InjectNetworkFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 

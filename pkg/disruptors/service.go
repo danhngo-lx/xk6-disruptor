@@ -25,6 +25,10 @@ type ServiceDisruptorOptions struct {
 	// timeout when waiting agent to be injected (default 30s). A zero value forces default.
 	// A Negative value forces no waiting.
 	InjectTimeout time.Duration `js:"injectTimeout"`
+	// AgentImage overrides the container image used for the injected agent ephemeral container.
+	// When empty, the image is resolved from the XK6_DISRUPTOR_AGENT_IMAGE environment variable
+	// or the build-time default.
+	AgentImage string `js:"agentImage"`
 }
 
 // serviceDisruptor is an instance of a ServiceDisruptor
@@ -91,7 +95,7 @@ func (d *serviceDisruptor) InjectHTTPFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
@@ -127,7 +131,7 @@ func (d *serviceDisruptor) InjectGrpcFaults(
 
 	visitor := NewPodAgentVisitor(
 		d.helper,
-		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout},
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
 		command,
 	)
 
