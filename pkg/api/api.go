@@ -454,6 +454,19 @@ func buildJsServiceDisruptor(
 	return buildObject(rt, d)
 }
 
+// podDisruptorArg is a combined struct used to parse the PodDisruptor constructor's first argument.
+// It merges PodSelectorSpec and PodDisruptorOptions so that callers can pass all fields in a
+// single object (the preferred style) or keep using the legacy two-argument form.
+type podDisruptorArg struct {
+	// PodSelectorSpec fields
+	Namespace string                    `js:"namespace"`
+	Select    disruptors.PodAttributes  `js:"select"`
+	Exclude   disruptors.PodAttributes  `js:"exclude"`
+	// PodDisruptorOptions fields
+	InjectTimeout time.Duration `js:"injectTimeout"`
+	AgentImage    string        `js:"agentImage"`
+}
+
 // NewPodDisruptor creates an instance of a PodDisruptor
 // The context passed to this constructor is expected to control the lifecycle of the PodDisruptor
 func NewPodDisruptor(
@@ -466,19 +479,21 @@ func NewPodDisruptor(
 		return nil, fmt.Errorf("PodDisruptor constructor expects a non null PodSelector argument")
 	}
 
-	selector := disruptors.PodSelectorSpec{}
-	err := convertValue(rt, c.Argument(0), &selector)
+	arg := podDisruptorArg{}
+	err := convertValue(rt, c.Argument(0), &arg)
 	if err != nil {
 		return nil, fmt.Errorf("invalid PodSelector: %w", err)
 	}
 
-	options := disruptors.PodDisruptorOptions{}
-	// options argument is optional
-	if len(c.Arguments) > 1 {
-		err = convertValue(rt, c.Argument(1), &options)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PodDisruptorOptions: %w", err)
-		}
+	selector := disruptors.PodSelectorSpec{
+		Namespace: arg.Namespace,
+		Select:    arg.Select,
+		Exclude:   arg.Exclude,
+	}
+
+	options := disruptors.PodDisruptorOptions{
+		InjectTimeout: arg.InjectTimeout,
+		AgentImage:    arg.AgentImage,
 	}
 
 	disruptor, err := disruptors.NewPodDisruptor(ctx, k8s, selector, options)

@@ -17,18 +17,29 @@ All disruptors expose the following utility methods:
 | `targets()` | `string[]` | Names of the pods currently selected by the disruptor |
 | `targetIPs()` | `string[]` | IP addresses of the pods currently selected by the disruptor |
 
-### Disruptor options
-
-Both `PodDisruptor` and `ServiceDisruptor` accept an options object as their last constructor argument:
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `injectTimeout` | `string \| number` | `"30s"` | How long to wait for the agent ephemeral container to reach Running state. Negative value disables waiting. |
-| `agentImage` | `string` | *(see [Agent Image Configuration](#agent-image-configuration))* | Full container image reference for the agent, e.g. `"ghcr.io/myorg/xk6-disruptor-agent:latest"`. Overrides the env var and build-time default. |
-
 ### PodDisruptor
 
 Targets pods directly, selected by namespace and label selectors.
+
+**Constructor:** `new PodDisruptor(config)`
+
+All fields are passed in a single configuration object:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `namespace` | `string` | Yes | Kubernetes namespace to target |
+| `select` | `{ labels: Record<string, string> }` | Yes | Label selector for target pods |
+| `exclude` | `{ labels: Record<string, string> }` | No | Label selector to exclude pods |
+| `injectTimeout` | `string \| number` | No | How long to wait for the agent container to start (default `"30s"`). Negative disables waiting. |
+| `agentImage` | `string` | No | Full container image reference for the agent. See [Agent Image Configuration](#agent-image-configuration). |
+
+```js
+const disruptor = new PodDisruptor({
+  namespace: 'my-ns',
+  select: { labels: { 'app.kubernetes.io/name': 'my-app' } },
+  agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:latest',  // optional
+});
+```
 
 Supported fault types:
 
@@ -47,6 +58,20 @@ Supported fault types:
 ### ServiceDisruptor
 
 Resolves a Kubernetes `Service` to its backing pods and applies faults to them. Supports the same HTTP, gRPC, and pod termination faults as `PodDisruptor`, but does not expose network-level or resource stress faults.
+
+**Constructor:** `new ServiceDisruptor(service, namespace, options?)`
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `service` | `string` | Yes | Name of the Kubernetes Service |
+| `namespace` | `string` | Yes | Namespace the Service lives in |
+| `options` | `object` | No | `{ injectTimeout?, agentImage? }` — same semantics as `PodDisruptor` |
+
+```js
+const disruptor = new ServiceDisruptor('my-service', 'my-ns', {
+  agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:latest',  // optional
+});
+```
 
 ## HTTP Fault Options
 
