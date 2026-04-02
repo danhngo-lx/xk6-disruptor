@@ -332,6 +332,41 @@ func (p *jsMemoryStressFaultInjector) InjectMemoryStress(args ...sobek.Value) {
 	}
 }
 
+// jsCrashLoopFaultInjector implements the JS interface for injecting crash loop faults
+type jsCrashLoopFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.CrashLoopFaultInjector
+}
+
+// InjectCrashLoopFault is a proxy method. Validates parameters and delegates to the CrashLoop fault injector
+func (p *jsCrashLoopFaultInjector) InjectCrashLoopFault(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("CrashLoopFault and duration are required"))
+	}
+
+	fault := disruptors.CrashLoopFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	if fault.Container == "" {
+		common.Throw(p.rt, fmt.Errorf("CrashLoopFault.container is required"))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.CrashLoopFaultInjector.InjectCrashLoopFault(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
 type jsPodDisruptor struct {
 	jsDisruptor
 	jsProtocolFaultInjector
@@ -342,6 +377,7 @@ type jsPodDisruptor struct {
 	jsCPUStressFaultInjector
 	jsMemoryStressFaultInjector
 	jsDNSFaultInjector
+	jsCrashLoopFaultInjector
 }
 
 // buildJsPodDisruptor builds a goja object that implements the PodDisruptor API
@@ -395,6 +431,11 @@ func buildJsPodDisruptor(
 			ctx:              ctx,
 			rt:               rt,
 			DNSFaultInjector: disruptor,
+		},
+		jsCrashLoopFaultInjector: jsCrashLoopFaultInjector{
+			ctx:                    ctx,
+			rt:                     rt,
+			CrashLoopFaultInjector: disruptor,
 		},
 	}
 

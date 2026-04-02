@@ -75,17 +75,20 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 
 ### Supported fault types
 
-| Fault | API method | Description |
-|---|---|---|
-| HTTP faults | `injectHTTPFaults` | Delay, error code injection, response body/header modification |
-| gRPC faults | `injectGrpcFaults` | Delay and gRPC status code injection |
-| Network drop | `injectNetworkFaults` | Drop ingress packets by port/protocol via iptables |
-| Network shaping | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem` |
-| Network partition | `injectNetworkPartition` | Block traffic to/from specific CIDRs or IPs |
-| CPU stress | `injectCPUStress` | Consume a percentage of CPU across N cores |
-| Memory pressure | `injectMemoryStress` | Allocate and hold a given amount of memory |
-| DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs |
-| Pod termination | `terminatePods` | Terminate a random subset of target pods |
+| Fault | API method | Description | Status |
+|---|---|---|---|
+| HTTP faults | `injectHTTPFaults` | Delay, error code injection, response body/header modification | ✅ Stable |
+| gRPC faults | `injectGrpcFaults` | Delay and gRPC status code injection | ✅ Stable |
+| Network drop | `injectNetworkFaults` | Drop ingress packets by port/protocol via iptables | ✅ Stable |
+| Pod termination | `terminatePods` | Terminate a random subset of target pods | ✅ Stable |
+| Crash loop | `injectCrashLoopFault` | Repeatedly kill a container's PID 1 to drive the pod into CrashLoopBackOff | ✅ Stable |
+| Network shaping | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem` | ⚠️ Experimental |
+| Network partition | `injectNetworkPartition` | Block traffic to/from specific CIDRs or IPs | ⚠️ Experimental |
+| CPU stress | `injectCPUStress` | Consume a percentage of CPU across N cores | ⚠️ Experimental |
+| Memory pressure | `injectMemoryStress` | Allocate and hold a given amount of memory | ⚠️ Experimental |
+| DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs | ⚠️ Experimental |
+
+> ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
 
 ## Agent image configuration
 

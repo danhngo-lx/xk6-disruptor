@@ -27,6 +27,9 @@ type PodHelper interface {
 	WaitPodRunning(ctx context.Context, name string, timeout time.Duration) (bool, error)
 	// WaitPodDeleted waits for the Pod to be deleted for up to given timeout
 	WaitPodDeleted(ctx context.Context, name string, timeout time.Duration) error
+	// WaitContainerRunning waits for a specific container within a pod to be in the Running state.
+	// Returns true if the container reached Running within the timeout, false otherwise.
+	WaitContainerRunning(ctx context.Context, podName, containerName string, timeout time.Duration) (bool, error)
 	// Exec executes a non-interactive command described in options and returns the stdout and stderr outputs
 	Exec(ctx context.Context, pod string, container string, command []string, stdin []byte) ([]byte, []byte, error)
 	// AttachEphemeralContainer adds an ephemeral container to a running pod
@@ -152,6 +155,23 @@ func (h *podHelper) WaitPodRunning(ctx context.Context, name string, timeout tim
 			}
 			if pod.Status.Phase == corev1.PodRunning {
 				return true, nil
+			}
+			return false, nil
+		},
+	)
+}
+
+func (h *podHelper) WaitContainerRunning(ctx context.Context, podName, containerName string, timeout time.Duration) (bool, error) {
+	return h.waitForCondition(
+		ctx,
+		h.namespace,
+		podName,
+		timeout,
+		func(pod *corev1.Pod) (bool, error) {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == containerName {
+					return cs.State.Running != nil, nil
+				}
 			}
 			return false, nil
 		},

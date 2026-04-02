@@ -43,17 +43,40 @@ const disruptor = new PodDisruptor({
 
 Supported fault types:
 
-| Method | Fault | Description |
-|---|---|---|
-| `injectHTTPFaults` | `HTTPFault` | Delay, error code injection, path exclusions, response body/header modification |
-| `injectGrpcFaults` | `GrpcFault` | Delay, gRPC status code injection, service exclusions |
-| `injectNetworkFaults` | `NetworkFault` | Drop all or filtered (port/protocol) ingress packets via iptables |
-| `injectNetworkShapingFaults` | `NetworkShapingFault` | Packet delay/jitter, loss %, corruption, duplication, and rate limiting via `tc netem` |
-| `injectNetworkPartition` | `NetworkPartitionFault` | Block ingress/egress/both traffic to specific CIDRs or IPs via iptables |
-| `injectCPUStress` | `CPUStressFault` | Consume a target percentage of CPU across N cores |
-| `injectMemoryStress` | `MemoryStressFault` | Allocate and hold a specified number of bytes of memory |
-| `injectDNSFaults` | `DNSFault` | Return NXDOMAIN for a fraction of DNS queries or spoof specific domains to fake IPs |
-| `terminatePods` | `PodTerminationFault` | Terminate a random subset of target pods |
+| Method | Fault | Description | Status |
+|---|---|---|---|
+| `injectHTTPFaults` | `HTTPFault` | Delay, error code injection, path exclusions, response body/header modification | ✅ Stable |
+| `injectGrpcFaults` | `GrpcFault` | Delay, gRPC status code injection, service exclusions | ✅ Stable |
+| `injectNetworkFaults` | `NetworkFault` | Drop all or filtered (port/protocol) ingress packets via iptables | ✅ Stable |
+| `terminatePods` | `PodTerminationFault` | Terminate a random subset of target pods | ✅ Stable |
+| `injectCrashLoopFault` | `CrashLoopFault` | Repeatedly kill a container's main process (PID 1) to drive the pod into CrashLoopBackOff | ✅ Stable |
+| `injectNetworkShapingFaults` | `NetworkShapingFault` | Packet delay/jitter, loss %, corruption, duplication, and rate limiting via `tc netem` | ⚠️ Experimental |
+| `injectNetworkPartition` | `NetworkPartitionFault` | Block ingress/egress/both traffic to specific CIDRs or IPs via iptables | ⚠️ Experimental |
+| `injectCPUStress` | `CPUStressFault` | Consume a target percentage of CPU across N cores | ⚠️ Experimental |
+| `injectMemoryStress` | `MemoryStressFault` | Allocate and hold a specified number of bytes of memory | ⚠️ Experimental |
+| `injectDNSFaults` | `DNSFault` | Return NXDOMAIN for a fraction of DNS queries or spoof specific domains to fake IPs | ⚠️ Experimental |
+
+> ⚠️ Experimental faults are code-complete but have not been validated end-to-end in a live cluster. They require the custom agent image built from this fork.
+
+### CrashLoopFault
+
+`injectCrashLoopFault` does not use the ephemeral agent container. It execs `kill -9 1` directly into the target container via the Kubernetes API, causing the container to exit with a non-zero code. Kubernetes restarts it with exponential backoff (10s, 20s, 40s, 80s, 160s, 300s). After ~5–6 kills the pod enters CrashLoopBackOff.
+
+**`CrashLoopFault` fields** (1st argument):
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `container` | `string` | Yes | Name of the container whose PID 1 will be killed |
+| `count` | `number` | No | Maximum number of kills. `0` (default) means kill repeatedly for the full duration. |
+
+```js
+disruptor.injectCrashLoopFault(
+  { container: "my-app", count: 6 },
+  "300s",
+);
+```
+
+**Recovery:** No manual cleanup is needed. The pod manifest is not changed. Once the disruptor stops, Kubernetes will eventually restart the container successfully after the backoff timer expires (up to 5 minutes after the last kill).
 
 ### ServiceDisruptor
 

@@ -3,12 +3,15 @@ package disruptors
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/types/intstr"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // DefaultTargetPort defines the default value for a target HTTP
@@ -25,6 +28,7 @@ type PodDisruptor interface {
 	CPUStressFaultInjector
 	MemoryStressFaultInjector
 	DNSFaultInjector
+	CrashLoopFaultInjector
 }
 
 // PodDisruptorOptions defines options that controls the PodDisruptor's behavior
@@ -118,6 +122,83 @@ func (d *podDisruptor) Cleanup(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// InjectCrashLoopFault repeatedly kills the main process (PID 1) of the specified
+// container in each target pod, causing Kubernetes to restart it. After enough
+// restarts the pod enters CrashLoopBackOff. The fault runs for the given duration
+// or until fault.Count crashes have been triggered (whichever comes first).
+func (d *podDisruptor) InjectCrashLoopFault(ctx context.Context, fault CrashLoopFault, duration time.Duration) error {
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	type result struct {
+		pod string
+		err error
+	}
+	results := make(chan result, len(targets))
+	deadline := time.Now().Add(duration)
+
+	for _, pod := range targets {
+		go func(pod corev1.Pod) {
+			results <- result{pod: pod.Name, err: d.crashLoopPod(ctx, pod, fault, deadline)}
+		}(pod)
+	}
+
+	var errs []error
+	for range targets {
+		r := <-results
+		if r.err != nil {
+			errs = append(errs, fmt.Errorf("pod %s: %w", r.pod, r.err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// crashLoopPod repeatedly kills PID 1 of the target container in a single pod.
+func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault CrashLoopFault, deadline time.Time) error {
+	crashes := 0
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		if fault.Count > 0 && crashes >= fault.Count {
+			return nil
+		}
+
+		_, _, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "1"}, []byte{})
+		if err != nil {
+			// container may be mid-restart — wait briefly and retry
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+		crashes++
+
+		// brief pause so Kubernetes notices the container exited
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(1 * time.Second):
+		}
+
+		remaining := time.Until(deadline)
+		if remaining <= 0 || (fault.Count > 0 && crashes >= fault.Count) {
+			return nil
+		}
+
+		// wait for the container to restart before killing it again
+		_, _ = d.helper.WaitContainerRunning(ctx, pod.Name, fault.Container, remaining)
+	}
 }
 
 // InjectHTTPFaults injects faults in the http requests sent to the disruptor's targets
