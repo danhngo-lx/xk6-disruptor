@@ -60,7 +60,9 @@ func (s *Shaper) Apply(ctx context.Context, duration time.Duration) error {
 		return fmt.Errorf("at least one shaping parameter must be specified")
 	}
 
-	addArgs := append([]string{"qdisc", "add", "dev", s.config.Interface, "root", "netem"}, args...)
+	// Use "replace" instead of "add" so the command succeeds even if a qdisc
+	// already exists on the interface (e.g. from a previous interrupted run).
+	addArgs := append([]string{"qdisc", "replace", "dev", s.config.Interface, "root", "netem"}, args...)
 	if out, err := s.executor.Exec("tc", addArgs...); err != nil {
 		return fmt.Errorf("applying tc netem: %w: %q", err, out)
 	}

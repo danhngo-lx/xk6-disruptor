@@ -90,6 +90,77 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 
 > ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
 
+See the [architecture guide](docs/01-development/02-architecture.md#experimental-fault-types) for detailed usage, field references, and examples for each experimental fault.
+
+### Network Shaping
+
+Applies `tc netem` rules to a pod's network interface. All parameters are optional but at least one must be set.
+
+```js
+disruptor.injectNetworkShapingFaults(
+  { delay: 200, jitter: 20, loss: 0.01 },  // 200ms ± 20ms, 1% loss
+  "60s",
+);
+```
+
+Fields: `interface` (default `"eth0"`), `delay` (ms), `jitter` (ms), `loss`, `corrupt`, `duplicate` (all fractions 0–1), `rate` (string, e.g. `"1mbit"`).
+
+### Network Partition
+
+Blocks traffic between the pod and specified CIDRs/IPs via `iptables DROP`.
+
+```js
+disruptor.injectNetworkPartition(
+  { hosts: ["10.0.1.42", "192.168.0.0/24"], direction: "egress" },
+  "60s",
+);
+```
+
+Fields: `hosts` (required, array of CIDRs or IPs), `direction` (`"ingress"`, `"egress"`, or `"both"` — default `"both"`).
+
+### CPU Stress
+
+Consumes a target percentage of CPU across N cores using a precise duty-cycle algorithm.
+
+```js
+disruptor.injectCPUStress(
+  { load: 80, cpus: 2 },  // 80% on 2 cores
+  "60s",
+);
+```
+
+Fields: `load` (required, 1–100), `cpus` (required, number of cores to stress).
+
+### Memory Stress
+
+Allocates and holds a fixed amount of memory, touching every page to force physical allocation.
+
+```js
+disruptor.injectMemoryStress(
+  { bytes: 256 * 1024 * 1024 },  // 256 MiB
+  "60s",
+);
+```
+
+Fields: `bytes` (required). **Warning:** if `bytes` exceeds the pod's memory limit the pod will be OOM-killed.
+
+### DNS Faults
+
+Starts an in-pod DNS proxy and redirects all UDP port 53 traffic to it. Non-faulted queries are forwarded to the configured upstream.
+
+```js
+disruptor.injectDNSFaults(
+  {
+    errorRate: 0.3,                         // 30% of queries return NXDOMAIN
+    spoof: { "payments.internal": "192.0.2.1" },
+    upstreamDNS: "10.96.0.10:53",          // use kube-dns, not 8.8.8.8
+  },
+  "60s",
+);
+```
+
+Fields: `errorRate` (0–1), `spoof` (domain → IP map), `upstreamDNS` (default `"8.8.8.8:53"` — **change this to your cluster DNS** for in-cluster use).
+
 ## Agent image configuration
 
 xk6-disruptor injects an ephemeral container (`xk6-disruptor-agent`) into target pods to apply faults. The container image used can be configured at three levels:

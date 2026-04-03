@@ -96,6 +96,157 @@ const disruptor = new ServiceDisruptor('my-service', 'my-ns', {
 });
 ```
 
+## Experimental Fault Types
+
+The following faults are code-complete but have not been validated end-to-end in a live cluster. They require the custom agent image (see [Agent Image Configuration](#agent-image-configuration)). All require the agent to run with `NET_ADMIN` capability.
+
+---
+
+### Network Shaping — `injectNetworkShapingFaults`
+
+Applies Linux `tc netem` rules to the pod's network interface to simulate degraded network conditions. All fields of `NetworkShapingFault` are optional but at least one must be set. The rules are removed automatically when the fault duration ends or the agent stops.
+
+> **Note:** If a previous test run was interrupted, a stale qdisc may remain. Call `disruptor.cleanup()` before re-running to avoid a `tc qdisc replace` conflict.
+
+**`NetworkShapingFault` fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `interface` | `string` | `"eth0"` | Network interface to shape |
+| `delay` | `number` (ms) | `0` | Average packet delay in milliseconds |
+| `jitter` | `number` (ms) | `0` | Delay variation (jitter) in milliseconds. Only used when `delay > 0`. |
+| `loss` | `number` | `0` | Fraction of packets to drop (0.0–1.0) |
+| `corrupt` | `number` | `0` | Fraction of packets to corrupt (0.0–1.0) |
+| `duplicate` | `number` | `0` | Fraction of packets to duplicate (0.0–1.0) |
+| `rate` | `string` | `""` | Bandwidth rate limit, e.g. `"1mbit"`, `"100kbit"` |
+
+```js
+// Add 200ms delay with 20ms jitter and 1% packet loss
+disruptor.injectNetworkShapingFaults(
+  { delay: 200, jitter: 20, loss: 0.01 },
+  "60s",
+);
+
+// Rate-limit to 1 Mbit/s
+disruptor.injectNetworkShapingFaults(
+  { rate: "1mbit" },
+  "60s",
+);
+```
+
+**Requirements:** `iproute2` (`tc`) must be present in the agent image. The `images/agent/Dockerfile` installs it.
+
+---
+
+### Network Partition — `injectNetworkPartition`
+
+Blocks traffic between the pod and a set of specified hosts (CIDRs or IPs) using `iptables DROP` rules. Rules are removed automatically when the fault ends.
+
+**`NetworkPartitionFault` fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `hosts` | `string[]` | Yes | List of CIDRs or IPs to block (e.g. `["10.0.0.1", "192.168.0.0/24"]`) |
+| `direction` | `string` | No | `"ingress"` (block inbound), `"egress"` (block outbound), or `"both"` (default) |
+
+```js
+// Block all traffic to/from a specific pod IP
+disruptor.injectNetworkPartition(
+  { hosts: ["10.0.1.42"], direction: "both" },
+  "60s",
+);
+
+// Block outbound traffic to a whole subnet
+disruptor.injectNetworkPartition(
+  { hosts: ["10.100.0.0/16"], direction: "egress" },
+  "60s",
+);
+```
+
+**Requirements:** `iptables` must be present in the agent image and the agent needs `NET_ADMIN` capability.
+
+---
+
+### CPU Stress — `injectCPUStress`
+
+Spawns goroutines that perform busy-loop SHA1 hashing to consume a target percentage of CPU on each of the specified cores. The load is applied using a precise duty-cycle algorithm (busy-then-sleep per time slice).
+
+**`CPUStressFault` fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `load` | `number` | Yes | Target CPU load percentage per core (1–100) |
+| `cpus` | `number` | Yes | Number of CPUs (cores) to stress |
+
+```js
+// Stress 2 CPUs at 80% load for 60 seconds
+disruptor.injectCPUStress(
+  { load: 80, cpus: 2 },
+  "60s",
+);
+```
+
+**Note:** The pod must have enough CPU quota in its resource limits for the stress to be visible. Requesting 80% of 1 CPU on a pod with a 0.5 CPU limit will be throttled by the container runtime.
+
+---
+
+### Memory Stress — `injectMemoryStress`
+
+Allocates a fixed number of bytes and touches every page to force physical memory allocation (not just virtual). The memory is held for the full duration, then released.
+
+**`MemoryStressFault` fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bytes` | `number` | Yes | Number of bytes to allocate and hold |
+
+```js
+// Hold 256 MiB of memory for 60 seconds
+disruptor.injectMemoryStress(
+  { bytes: 256 * 1024 * 1024 },
+  "60s",
+);
+```
+
+**Warning:** If `bytes` exceeds the pod's memory limit, the pod (and the agent container) will be OOM-killed by the kernel. Size the allocation to stay below `resources.limits.memory` to control the blast radius.
+
+---
+
+### DNS Faults — `injectDNSFaults`
+
+Starts an embedded DNS proxy inside the pod (listening on `127.0.0.1:5353`) and redirects all DNS traffic (UDP port 53) to it via iptables. The proxy can return `NXDOMAIN` for a random fraction of queries or substitute spoofed IPs for specific domains. Non-faulted queries are forwarded to the upstream DNS server unchanged.
+
+**`DNSFault` fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `errorRate` | `number` | `0` | Fraction (0.0–1.0) of DNS queries that return `NXDOMAIN` |
+| `spoof` | `Record<string, string>` | `{}` | Map of `domain → IP` to return fake IPs for specific hostnames |
+| `upstreamDNS` | `string` | `"8.8.8.8:53"` | Upstream DNS server for non-faulted queries. Set to your cluster DNS (e.g. `"kube-dns.kube-system:53"`) for in-cluster usage. |
+
+```js
+// Make 30% of DNS queries fail with NXDOMAIN,
+// and point "payments.internal" to a honeypot IP
+disruptor.injectDNSFaults(
+  {
+    errorRate: 0.3,
+    spoof: { "payments.internal": "192.0.2.1" },
+    upstreamDNS: "10.96.0.10:53",  // kube-dns
+  },
+  "60s",
+);
+```
+
+**Important:** In-cluster environments (including Kubernetes pods) use the cluster DNS resolver (e.g. `10.96.0.10:53`), not `8.8.8.8`. Set `upstreamDNS` to the `kube-dns`/`CoreDNS` service IP to ensure non-faulted queries resolve correctly:
+
+```bash
+kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
+```
+
+**Requirements:** `iptables` must be available in the agent image.
+
+---
+
 ## HTTP Fault Options
 
 `injectHTTPFaults` accepts an options object (`HTTPDisruptionOptions`) in addition to the fault parameters:

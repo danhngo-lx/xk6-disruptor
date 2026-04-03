@@ -90,9 +90,6 @@ func (d PartitionDisruptor) Apply(ctx context.Context, duration time.Duration) e
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, duration)
-	defer cancel()
-
 	select {
 	case <-time.After(duration):
 		return nil
