@@ -278,6 +278,47 @@ func buildMemoryStressCmd(fault MemoryStressFault, duration time.Duration) []str
 	}
 }
 
+func buildDiskFillCmd(fault DiskFillFault, duration time.Duration) []string {
+	cmd := []string{
+		"xk6-disruptor-agent",
+		"disk-fill",
+		"-d", utils.DurationSeconds(duration),
+		"--bytes", fmt.Sprint(fault.Bytes),
+	}
+
+	if fault.Path != "" {
+		cmd = append(cmd, "--path", fault.Path)
+	}
+
+	if fault.BlockSize > 0 {
+		cmd = append(cmd, "--block-size", fmt.Sprint(fault.BlockSize))
+	}
+
+	return cmd
+}
+
+func buildIOStressCmd(fault IOStressFault, duration time.Duration) []string {
+	cmd := []string{
+		"xk6-disruptor-agent",
+		"io-stress",
+		"-d", utils.DurationSeconds(duration),
+	}
+
+	if fault.Path != "" {
+		cmd = append(cmd, "--path", fault.Path)
+	}
+
+	if fault.Workers > 0 {
+		cmd = append(cmd, "--workers", fmt.Sprint(fault.Workers))
+	}
+
+	if fault.BytesPerWorker > 0 {
+		cmd = append(cmd, "--bytes-per-worker", fmt.Sprint(fault.BytesPerWorker))
+	}
+
+	return cmd
+}
+
 func buildCleanupCmd() []string {
 	return []string{"xk6-disruptor-agent", "cleanup"}
 }
@@ -463,6 +504,38 @@ func (c PodHTTPResetPeerFaultCommand) Commands(pod corev1.Pod) (VisitCommands, e
 
 	return VisitCommands{
 		Exec:    buildHTTPResetPeerCmd(targetAddress, podFault, c.duration, c.options),
+		Cleanup: buildCleanupCmd(),
+	}, nil
+}
+
+// PodDiskFillFaultCommand implements the PodVisitCommands interface for injecting DiskFillFaults in a Pod
+type PodDiskFillFaultCommand struct {
+	fault    DiskFillFault
+	duration time.Duration
+}
+
+// Commands returns the command for injecting a DiskFillFault in a Pod
+func (c PodDiskFillFaultCommand) Commands(_ corev1.Pod) (VisitCommands, error) {
+	if c.fault.Bytes <= 0 {
+		return VisitCommands{}, fmt.Errorf("bytes must be greater than zero for disk fill fault")
+	}
+
+	return VisitCommands{
+		Exec:    buildDiskFillCmd(c.fault, c.duration),
+		Cleanup: buildCleanupCmd(),
+	}, nil
+}
+
+// PodIOStressFaultCommand implements the PodVisitCommands interface for injecting IOStressFaults in a Pod
+type PodIOStressFaultCommand struct {
+	fault    IOStressFault
+	duration time.Duration
+}
+
+// Commands returns the command for injecting an IOStressFault in a Pod
+func (c PodIOStressFaultCommand) Commands(_ corev1.Pod) (VisitCommands, error) {
+	return VisitCommands{
+		Exec:    buildIOStressCmd(c.fault, c.duration),
 		Cleanup: buildCleanupCmd(),
 	}, nil
 }

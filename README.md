@@ -71,9 +71,9 @@ export default function () {
 
 The project, at this time, is intended to test systems running in Kubernetes. Other platforms are not supported at this time.
 
-It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for creating disruptors that target one specific type of component (e.g., Pods) and is capable of injecting different kinds of faults. Disruptors exist for [Pods](https://k6.io/docs/javascript-api/xk6-disruptor/api/poddisruptor) and [Services](https://k6.io/docs/javascript-api/xk6-disruptor/api/servicedisruptor).
+It offers an API for creating disruptors that target one specific type of component (e.g., Pods, Nodes) and is capable of injecting different kinds of faults. Disruptors exist for Pods, Services, and Nodes.
 
-### Supported fault types
+### Pod / Service fault types
 
 | Fault | API method | Description | Status |
 |---|---|---|---|
@@ -88,6 +88,19 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 | CPU stress | `injectCPUStress` | Consume a percentage of CPU across N cores | ⚠️ Experimental |
 | Memory pressure | `injectMemoryStress` | Allocate and hold a given amount of memory | ⚠️ Experimental |
 | DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs | ⚠️ Experimental |
+| Disk fill | `injectDiskFill` | Write a large file to exhaust ephemeral storage quota (can trigger pod eviction) | ⚠️ Experimental |
+| IO stress | `injectIOStress` | Parallel write/read workers to saturate I/O throughput ("noisy neighbour") | ⚠️ Experimental |
+
+### Node fault types (`NodeDisruptor`)
+
+| Fault | API method | Description | Status |
+|---|---|---|---|
+| Node drain | `drain` | Cordon + evict all eligible pods, then uncordon after duration | ⚠️ Experimental |
+| Node taint | `taintNode` | Add a taint to the node, remove it after duration | ⚠️ Experimental |
+| Node CPU stress | `injectCPUStress` | Run a CPU stressor at node level via a privileged pod | ⚠️ Experimental |
+| Node memory stress | `injectMemoryStress` | Run a memory stressor at node level via a privileged pod | ⚠️ Experimental |
+| Node IO stress | `injectIOStress` | Run an IO stressor at node level via a privileged pod | ⚠️ Experimental |
+| Kubelet service kill | `injectKubeletServiceKill` | Stop the kubelet service for a duration then restart it via nsenter | ⚠️ Experimental |
 
 > ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
 
@@ -175,6 +188,138 @@ disruptor.injectDNSFaults(
 ```
 
 Fields: `errorRate` (0–1), `spoof` (domain → IP map), `upstreamDNS` (default `"8.8.8.8:53"` — **change this to your cluster DNS** for in-cluster use).
+
+### Disk Fill
+
+Writes a large file inside the pod to consume ephemeral storage quota. The file is deleted automatically when the fault ends. If `bytes` exceeds `resources.limits.ephemeral-storage`, the kubelet evicts the pod.
+
+```js
+// Fill 500 MiB of ephemeral storage
+disruptor.injectDiskFill(
+  { bytes: 500 * 1024 * 1024 },
+  "60s",
+);
+```
+
+Fields: `bytes` (required), `path` (default `"/tmp"`), `blockSize` (default 262144 = 256 KiB). Note: ephemeral-storage limits must be set in the pod spec for eviction to trigger.
+
+### IO Stress
+
+Runs N parallel workers that continuously write and read back a fixed-size file to create sustained I/O pressure. Does not fill up the disk — goal is throughput/IOPS saturation.
+
+```js
+// 4 workers × 10 MiB working set = 40 MiB per write/read cycle
+disruptor.injectIOStress(
+  { path: "/data", workers: 4, bytesPerWorker: 10 * 1024 * 1024 },
+  "60s",
+);
+```
+
+Fields: `path` (default `"/tmp"`), `workers` (default `4`), `bytesPerWorker` (default 1 MiB). Set `path` to a PVC mount to target a specific volume.
+
+## NodeDisruptor
+
+`NodeDisruptor` targets Kubernetes nodes rather than pods. It supports two categories of operation:
+
+- **API-only** (`drain`, `taintNode`): implemented directly via the Kubernetes node API — no agent injection.
+- **Privileged pod** (`injectCPUStress`, `injectMemoryStress`, `injectIOStress`, `injectKubeletServiceKill`): creates a temporary privileged pod (`hostPID=true`) on the target node using the agent image, runs the stressor, then deletes the pod.
+
+### Constructor
+
+```js
+import { NodeDisruptor } from "k6/x/disruptor";
+
+// Target a specific node by name
+const disruptor = new NodeDisruptor({ name: "worker-node-1" });
+
+// Or target nodes by label selector
+const disruptor = new NodeDisruptor({
+  select: { labels: { "node-role.kubernetes.io/worker": "" } },
+  agentNamespace: "kube-system",   // namespace for privileged helper pods (default: kube-system)
+  agentImage: "myregistry/xk6-disruptor-agent:v1.0",  // optional image override
+});
+```
+
+### Node Drain
+
+Cordons the node, evicts all eligible pods, waits for `duration`, then uncordons.
+
+```js
+disruptor.drain(
+  { skipDaemonSets: true, deleteLocalData: false },
+  "120s",
+);
+```
+
+Fields: `skipDaemonSets` (default `false`), `deleteLocalData` (default `false`), `timeout` (per-pod eviction timeout, default `300s`).
+
+### Node Taint
+
+Adds a taint to the node, waits for `duration`, then removes it.
+
+```js
+disruptor.taintNode(
+  { key: "chaos", value: "true", effect: "NoSchedule" },
+  "60s",
+);
+```
+
+Fields: `key` (required), `value`, `effect` (`"NoSchedule"` | `"PreferNoSchedule"` | `"NoExecute"`, default `"NoSchedule"`).
+
+### Node CPU Stress
+
+Runs the agent as a privileged pod on the node to stress CPU at node level.
+
+```js
+disruptor.injectCPUStress({ load: 90, cpus: 4 }, "60s");
+```
+
+### Node Memory Stress
+
+Runs the agent as a privileged pod on the node to allocate memory at node level.
+
+```js
+disruptor.injectMemoryStress({ bytes: 2 * 1024 * 1024 * 1024 }, "60s"); // 2 GiB
+```
+
+### Node IO Stress
+
+Runs the agent as a privileged pod on the node with sustained I/O workers.
+
+```js
+disruptor.injectIOStress(
+  { path: "/var/lib/kubelet", workers: 4, bytesPerWorker: 50 * 1024 * 1024 },
+  "60s",
+);
+```
+
+### Kubelet Service Kill
+
+Stops the kubelet systemd service on the node for `duration` then restarts it. Uses `nsenter` to enter the host's systemd mount namespace (requires `hostPID=true`, which is set automatically on the helper pod).
+
+```js
+disruptor.injectKubeletServiceKill("30s");
+```
+
+After the kubelet stops the node becomes `NotReady` (after the node monitor grace period, default ~40 s). Active pods continue running but new scheduling and exec operations are blocked. The kubelet is automatically restarted before the method returns.
+
+### RBAC requirements for NodeDisruptor
+
+The service account running k6 needs the following permissions in addition to what `PodDisruptor` requires:
+
+```yaml
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: ["policy"]
+  resources: ["evictions"]
+  verbs: ["create"]
+```
+
+For `drain` and eviction operations the service account also needs `pods/eviction` in all namespaces.
 
 ## Agent image configuration
 

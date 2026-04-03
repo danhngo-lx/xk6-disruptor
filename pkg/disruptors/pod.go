@@ -29,6 +29,8 @@ type PodDisruptor interface {
 	MemoryStressFaultInjector
 	DNSFaultInjector
 	CrashLoopFaultInjector
+	DiskFillFaultInjector
+	IOStressFaultInjector
 }
 
 // PodDisruptorOptions defines options that controls the PodDisruptor's behavior
@@ -431,6 +433,56 @@ func (d *podDisruptor) InjectDNSFaults(
 	controller := NewPodController(targets)
 
 	return controller.Visit(ctx, visitor)
+}
+
+// InjectDiskFill fills disk space in the target pods by writing a large file
+func (d *podDisruptor) InjectDiskFill(
+	ctx context.Context,
+	fault DiskFillFault,
+	duration time.Duration,
+) error {
+	command := PodDiskFillFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	return NewPodController(targets).Visit(ctx, visitor)
+}
+
+// InjectIOStress runs parallel I/O workers to create sustained disk I/O pressure
+func (d *podDisruptor) InjectIOStress(
+	ctx context.Context,
+	fault IOStressFault,
+	duration time.Duration,
+) error {
+	command := PodIOStressFaultCommand{
+		fault:    fault,
+		duration: duration,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	return NewPodController(targets).Visit(ctx, visitor)
 }
 
 // TerminatePods terminates a subset of the target pods of the disruptor

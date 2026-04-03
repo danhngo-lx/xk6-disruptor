@@ -8,14 +8,17 @@ The agent offers a series of commands that inject different types of disruptions
 
 ## Disruptors
 
-Disruptors are the top-level objects exposed to k6 scripts. Currently two disruptors are available: `PodDisruptor` and `ServiceDisruptor`. Both are backed by the same ephemeral agent container (`xk6-agent`) injected into target pods.
+Disruptors are the top-level objects exposed to k6 scripts. Three disruptors are available: `PodDisruptor`, `ServiceDisruptor`, and `NodeDisruptor`.
+
+`PodDisruptor` and `ServiceDisruptor` are backed by the ephemeral agent container (`xk6-agent`) injected into target pods. `NodeDisruptor` uses two models: pure Kubernetes API calls (for drain and taint) and a privileged helper pod on the target node (for resource stress and kubelet kill).
 
 All disruptors expose the following utility methods:
 
 | Method | Returns | Description |
 |---|---|---|
-| `targets()` | `string[]` | Names of the pods currently selected by the disruptor |
-| `targetIPs()` | `string[]` | IP addresses of the pods currently selected by the disruptor |
+| `targets()` | `string[]` | Names of the resources currently selected by the disruptor |
+| `targetIPs()` | `string[]` | IP addresses of the resources currently selected by the disruptor |
+| `cleanup()` | `void` | Stop any stale agent processes / remove lingering helper resources |
 
 ### PodDisruptor
 
@@ -56,6 +59,8 @@ Supported fault types:
 | `injectCPUStress` | ⚠️ Experimental | Consume a target % of CPU across N cores |
 | `injectMemoryStress` | ⚠️ Experimental | Allocate and hold a given amount of memory |
 | `injectDNSFaults` | ⚠️ Experimental | DNS proxy: NXDOMAIN injection and domain spoofing |
+| `injectDiskFill` | ⚠️ Experimental | Write a large file to exhaust ephemeral storage quota |
+| `injectIOStress` | ⚠️ Experimental | Parallel write/read workers to saturate I/O throughput |
 
 > ⚠️ Experimental faults are code-complete but have not been validated end-to-end in a live cluster. They require the custom agent image built from this fork.
 
@@ -416,6 +421,87 @@ kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
 
 ---
 
+### Disk Fill — `injectDiskFill(fault, duration)`
+
+Writes a large file to the target path inside the pod and holds it for the full duration. When the agent stops (or when cleanup is called), the file is deleted and the disk space is released.
+
+This tests what happens when a pod's **ephemeral storage quota** runs out:
+- If `bytes` is within the pod's `resources.limits.ephemeral-storage` limit: the pod experiences write errors but is not evicted.
+- If `bytes` exceeds the limit: the kubelet detects the overage during its periodic `du` scan and **evicts the pod**.
+
+> **Prerequisite:** To test eviction, `resources.limits.ephemeral-storage` must be set on the target container in the pod spec. Without a limit, Kubernetes does not evict — it only records disk pressure on the node.
+
+**`DiskFillFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `bytes` | `number` | — | **Required.** Number of bytes to write. |
+| `path` | `string` | `"/tmp"` | Directory to write the fill file into. Can be set to a specific emptyDir or PVC mount path. |
+| `blockSize` | `number` | `262144` | Write block size in bytes (256 KiB). Smaller values are more granular but slower. |
+
+```js
+// Fill 500 MiB of ephemeral storage for 60 seconds
+disruptor.injectDiskFill(
+  { bytes: 500 * 1024 * 1024 },
+  "60s",
+);
+
+// Fill a specific emptyDir volume mount
+disruptor.injectDiskFill(
+  { bytes: 1 * 1024 * 1024 * 1024, path: "/data" },
+  "60s",
+);
+
+// Exceed the pod's ephemeral-storage limit to trigger eviction
+// (requires resources.limits.ephemeral-storage to be set in the pod spec)
+disruptor.injectDiskFill(
+  { bytes: 4.5 * 1024 * 1024 * 1024 },  // exceeds a 4Gi limit
+  "60s",
+);
+```
+
+---
+
+### IO Stress — `injectIOStress(fault, duration)`
+
+Runs N parallel workers that continuously write and then read back a working-set file, creating sustained I/O pressure. This simulates the **"noisy neighbour"** scenario where multiple workloads compete for the same storage pool, causing I/O latency and throughput degradation for all consumers.
+
+Unlike `injectDiskFill`, the disk does **not fill up** — the worker files are constant-size and continuously overwritten. The goal is I/O saturation, not storage exhaustion.
+
+**`IOStressFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | `"/tmp"` | Directory to create working-set files in. Set to a PVC mount path to stress a specific volume. |
+| `workers` | `number` | `4` | Number of parallel I/O workers. |
+| `bytesPerWorker` | `number` | `1048576` | Working-set file size per worker (1 MiB). Total I/O per cycle ≈ `workers × bytesPerWorker`. |
+
+```js
+// Stress /tmp with 4 workers × 10 MiB each = 40 MiB per write/read cycle
+disruptor.injectIOStress(
+  { workers: 4, bytesPerWorker: 10 * 1024 * 1024 },
+  "60s",
+);
+
+// Stress a specific PVC mount
+disruptor.injectIOStress(
+  { path: "/data", workers: 8, bytesPerWorker: 50 * 1024 * 1024 },
+  "60s",
+);
+```
+
+**Disk Fill vs IO Stress comparison:**
+
+| | `injectDiskFill` | `injectIOStress` |
+|---|---|---|
+| Goal | Exhaust storage quota | Saturate I/O bandwidth |
+| Effect | Write errors, pod eviction | I/O latency, throughput degradation |
+| Disk usage | Grows until `bytes` | Constant (`workers × bytesPerWorker`) |
+| Can cause eviction | Yes (if > ephemeral-storage limit) | No |
+| Can target PVC | Yes | Yes |
+
+---
+
 ## HTTP Fault Options
 
 `injectHTTPFaults` accepts an options object (`HTTPDisruptionOptions`) in addition to the fault parameters:
@@ -477,6 +563,113 @@ export function runDisrupt() {
 
 This approach bypasses the service address, so it is only suitable when the k6 script directly controls the load generation target.
 
+## NodeDisruptor
+
+`NodeDisruptor` targets Kubernetes nodes and supports two execution models:
+
+- **Model A — pure Kubernetes API** (`drain`, `taintNode`): no privileged container needed; uses the Kubernetes node and eviction APIs.
+- **Model B — privileged helper pod** (`injectCPUStress`, `injectMemoryStress`, `injectIOStress`, `injectKubeletServiceKill`): creates a temporary pod with `hostPID: true` and a privileged security context on the target node, runs the agent stressor command inside it, then deletes the pod.
+
+**Constructor:** `new NodeDisruptor(config)`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes (exclusive with `select`) | Exact node name to target |
+| `select` | `{ labels: Record<string, string> }` | Yes (exclusive with `name`) | Label selector — targets all matching nodes |
+| `agentImage` | `string` | No | Container image for the privileged helper pod (same resolution order as PodDisruptor) |
+| `agentNamespace` | `string` | No | Namespace where helper pods are created (default `"kube-system"`) |
+| `injectTimeout` | `string \| number` | No | Time budget for the helper pod to start (default `"30s"`) |
+
+```js
+import { NodeDisruptor } from "k6/x/disruptor";
+
+// By name
+const disruptor = new NodeDisruptor({ name: "worker-node-1" });
+
+// By label selector
+const disruptor = new NodeDisruptor({
+  select: { labels: { "node-role.kubernetes.io/worker": "" } },
+  agentNamespace: "kube-system",
+});
+```
+
+### `drain(fault, duration)`
+
+Cordons the node (marks it unschedulable), evicts all eligible pods, waits for `duration`, then uncordons.
+
+**`NodeDrainFault` fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `skipDaemonSets` | `boolean` | `false` | Skip DaemonSet-owned pods during eviction |
+| `deleteLocalData` | `boolean` | `false` | Evict pods with local storage (emptyDir / hostPath volumes) |
+| `timeout` | `number` (ms) | `300000` | Per-pod eviction timeout |
+
+```js
+disruptor.drain({ skipDaemonSets: true }, "120s");
+```
+
+### `taintNode(fault, duration)`
+
+Adds a taint to the node, waits for `duration`, then removes it.
+
+**`NodeTaintFault` fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `key` | `string` | — | Taint key (required) |
+| `value` | `string` | `""` | Taint value |
+| `effect` | `string` | `"NoSchedule"` | Taint effect: `"NoSchedule"`, `"PreferNoSchedule"`, or `"NoExecute"` |
+
+```js
+disruptor.taintNode({ key: "chaos", value: "true", effect: "NoExecute" }, "60s");
+```
+
+### `injectCPUStress(fault, duration)` / `injectMemoryStress(fault, duration)` / `injectIOStress(fault, duration)`
+
+These work identically to the same methods on `PodDisruptor` but run at node level via a privileged helper pod. Refer to the `PodDisruptor` parameter tables for [`injectCPUStress`](#injectcpustressfault-duration), [`injectMemoryStress`](#injectmemorystressfault-duration), and [`injectIOStress`](#injectiostressfault-duration).
+
+```js
+disruptor.injectCPUStress({ load: 90, cpus: 4 }, "60s");
+disruptor.injectMemoryStress({ bytes: 2 * 1024 * 1024 * 1024 }, "60s");
+disruptor.injectIOStress({ workers: 4, bytesPerWorker: 50 * 1024 * 1024 }, "60s");
+```
+
+### `injectKubeletServiceKill(duration)`
+
+Stops the kubelet systemd service on the node for `duration`, then restarts it. Requires the privileged helper pod to have `hostPID: true` (set automatically). Uses `nsenter --target 1 --mount` to enter the host's systemd mount namespace.
+
+**Design note:** the stop, sleep, and start all happen inside a single long-running exec call. This avoids the need for a second connection to the pod after the kubelet has stopped (which would break the SPDY exec channel).
+
+```js
+disruptor.injectKubeletServiceKill("30s");
+```
+
+After the kubelet stops the node becomes `NotReady` (after the node monitor grace period, approximately 40 s by default). Existing pods continue running because pod lifecycle is managed by the kubelet — once stopped, it cannot evict pods. New scheduling and exec operations are blocked until the kubelet restarts.
+
+### RBAC for NodeDisruptor
+
+The service account used to run k6 needs additional permissions compared to `PodDisruptor`:
+
+```yaml
+# Cluster-scoped — nodes are not namespaced
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+# For privileged helper pod management (Model B)
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+# For drain eviction (Model A)
+- apiGroups: ["policy"]
+  resources: ["evictions"]
+  verbs: ["create"]
+```
+
+A `ClusterRole` (not a namespaced `Role`) is required for node access since nodes are cluster-scoped resources.
+
+---
+
 ## Agent Image Configuration
 
 The agent container image is resolved in the following priority order (first match wins):
@@ -530,6 +723,9 @@ The `xk6-disruptor-agent` binary exposes the following subcommands, each corresp
 | `tcp-drop` | Reset a fraction of TCP connections via NFQUEUE |
 | `stress` | Stress CPU at a target load percentage across N cores |
 | `memory-stress` | Allocate and hold a given number of bytes of memory |
+| `disk-fill` | Write a large file to fill disk/ephemeral storage quota; delete on cleanup |
+| `io-stress` | Parallel write/read workers to create sustained I/O pressure |
 | `dns` | Intercept DNS queries; return NXDOMAIN or spoofed IPs via an embedded DNS proxy |
+| `kubelet-kill` | Stop the kubelet systemd service via nsenter, wait for duration, then restart it (privileged pod only) |
 | `cleanup` | Terminate the running agent and clean up any installed resources |
 

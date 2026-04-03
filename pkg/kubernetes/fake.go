@@ -47,6 +47,11 @@ func (f *FakeKubernetes) Client() kubernetes.Interface {
 	return f.client
 }
 
+// NodeHelper returns a NodeHelper backed by the fake client
+func (f *FakeKubernetes) NodeHelper() helpers.NodeHelper {
+	return helpers.NewNodeHelper(f.client)
+}
+
 // GetFakeProcessExecutor returns the FakeProcessExecutor used by the helpers to mock
 // the execution of commands in a Pod
 func (f *FakeKubernetes) GetFakeProcessExecutor() *helpers.FakePodCommandExecutor {

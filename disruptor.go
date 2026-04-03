@@ -62,6 +62,7 @@ func (m *ModuleInstance) Exports() modules.Exports {
 		Named: map[string]interface{}{
 			"PodDisruptor":     m.newPodDisruptor,
 			"ServiceDisruptor": m.newServiceDisruptor,
+			"NodeDisruptor":    m.newNodeDisruptor,
 		},
 	}
 }
@@ -86,6 +87,19 @@ func (m *ModuleInstance) newServiceDisruptor(c sobek.ConstructorCall) *sobek.Obj
 	disruptor, err := api.NewServiceDisruptor(ctx, rt, c, m.k8s)
 	if err != nil {
 		common.Throw(rt, fmt.Errorf("error creating ServiceDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a NodeDisruptor
+func (m *ModuleInstance) newNodeDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewNodeDisruptor(ctx, rt, c, m.k8s)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating NodeDisruptor: %w", err))
 	}
 
 	return disruptor

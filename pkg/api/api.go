@@ -400,6 +400,72 @@ func (p *jsCrashLoopFaultInjector) InjectCrashLoopFault(args ...sobek.Value) {
 	}
 }
 
+// jsDiskFillFaultInjector implements the JS interface for injecting disk fill faults
+type jsDiskFillFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.DiskFillFaultInjector
+}
+
+// InjectDiskFill is a proxy method. Validates parameters and delegates to the DiskFill fault injector
+func (p *jsDiskFillFaultInjector) InjectDiskFill(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("DiskFillFault and duration are required"))
+	}
+
+	fault := disruptors.DiskFillFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	if fault.Bytes <= 0 {
+		common.Throw(p.rt, fmt.Errorf("DiskFillFault.bytes must be greater than zero"))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.DiskFillFaultInjector.InjectDiskFill(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsIOStressFaultInjector implements the JS interface for injecting I/O stress faults
+type jsIOStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.IOStressFaultInjector
+}
+
+// InjectIOStress is a proxy method. Validates parameters and delegates to the IOStress fault injector
+func (p *jsIOStressFaultInjector) InjectIOStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("IOStressFault and duration are required"))
+	}
+
+	fault := disruptors.IOStressFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err = p.IOStressFaultInjector.InjectIOStress(p.ctx, fault, duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
 type jsPodDisruptor struct {
 	jsDisruptor
 	jsProtocolFaultInjector
@@ -411,6 +477,8 @@ type jsPodDisruptor struct {
 	jsMemoryStressFaultInjector
 	jsDNSFaultInjector
 	jsCrashLoopFaultInjector
+	jsDiskFillFaultInjector
+	jsIOStressFaultInjector
 }
 
 // buildJsPodDisruptor builds a goja object that implements the PodDisruptor API
@@ -469,6 +537,16 @@ func buildJsPodDisruptor(
 			ctx:                    ctx,
 			rt:                     rt,
 			CrashLoopFaultInjector: disruptor,
+		},
+		jsDiskFillFaultInjector: jsDiskFillFaultInjector{
+			ctx:                  ctx,
+			rt:                   rt,
+			DiskFillFaultInjector: disruptor,
+		},
+		jsIOStressFaultInjector: jsIOStressFaultInjector{
+			ctx:                  ctx,
+			rt:                   rt,
+			IOStressFaultInjector: disruptor,
 		},
 	}
 
@@ -635,6 +713,267 @@ func NewServiceDisruptor(
 	obj, err := buildJsServiceDisruptor(ctx, rt, disruptor)
 	if err != nil {
 		return nil, fmt.Errorf("error creating ServiceDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── NodeDisruptor JS API ─────────────────────────────────────────────────────
+
+// jsNodeDrainFaultInjector wraps the NodeDisruptor Drain method for JS
+type jsNodeDrainFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeDrainFaultInjector) Drain(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("NodeDrainFault and duration are required"))
+	}
+
+	fault := disruptors.NodeDrainFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.Drain(p.ctx, fault, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error draining node: %w", err))
+	}
+}
+
+// jsNodeTaintFaultInjector wraps the NodeDisruptor TaintNode method for JS
+type jsNodeTaintFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeTaintFaultInjector) TaintNode(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("NodeTaintFault and duration are required"))
+	}
+
+	fault := disruptors.NodeTaintFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.TaintNode(p.ctx, fault, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error tainting node: %w", err))
+	}
+}
+
+// jsNodeCPUStressFaultInjector wraps the NodeDisruptor InjectCPUStress method for JS
+type jsNodeCPUStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeCPUStressFaultInjector) InjectCPUStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("CPUStressFault and duration are required"))
+	}
+
+	fault := disruptors.CPUStressFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.InjectCPUStress(p.ctx, fault, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNodeMemoryStressFaultInjector wraps the NodeDisruptor InjectMemoryStress method for JS
+type jsNodeMemoryStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeMemoryStressFaultInjector) InjectMemoryStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("MemoryStressFault and duration are required"))
+	}
+
+	fault := disruptors.MemoryStressFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.InjectMemoryStress(p.ctx, fault, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNodeIOStressFaultInjector wraps the NodeDisruptor InjectIOStress method for JS
+type jsNodeIOStressFaultInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeIOStressFaultInjector) InjectIOStress(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("IOStressFault and duration are required"))
+	}
+
+	fault := disruptors.IOStressFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.InjectIOStress(p.ctx, fault, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNodeKubeletKillInjector wraps the NodeDisruptor InjectKubeletServiceKill method for JS
+type jsNodeKubeletKillInjector struct {
+	ctx context.Context
+	rt  *sobek.Runtime
+	disruptors.NodeDisruptor
+}
+
+func (p *jsNodeKubeletKillInjector) InjectKubeletServiceKill(args ...sobek.Value) {
+	if len(args) < 1 {
+		common.Throw(p.rt, fmt.Errorf("duration is required"))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[0], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	if err := p.NodeDisruptor.InjectKubeletServiceKill(p.ctx, duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNodeDisruptor combines all node-level JS injector wrappers
+type jsNodeDisruptor struct {
+	jsDisruptor
+	jsNodeDrainFaultInjector
+	jsNodeTaintFaultInjector
+	jsNodeCPUStressFaultInjector
+	jsNodeMemoryStressFaultInjector
+	jsNodeIOStressFaultInjector
+	jsNodeKubeletKillInjector
+}
+
+// buildJsNodeDisruptor builds a goja object that implements the NodeDisruptor API
+func buildJsNodeDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.NodeDisruptor,
+) (*sobek.Object, error) {
+	d := &jsNodeDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			Disruptor: disruptor,
+		},
+		jsNodeDrainFaultInjector: jsNodeDrainFaultInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+		jsNodeTaintFaultInjector: jsNodeTaintFaultInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+		jsNodeCPUStressFaultInjector: jsNodeCPUStressFaultInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+		jsNodeMemoryStressFaultInjector: jsNodeMemoryStressFaultInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+		jsNodeIOStressFaultInjector: jsNodeIOStressFaultInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+		jsNodeKubeletKillInjector: jsNodeKubeletKillInjector{
+			ctx:           ctx,
+			rt:            rt,
+			NodeDisruptor: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// nodeDisruptorArg is the combined struct used to parse the NodeDisruptor constructor argument
+type nodeDisruptorArg struct {
+	Name           string                    `js:"name"`
+	Select         disruptors.NodeAttributes `js:"select"`
+	AgentImage     string                    `js:"agentImage"`
+	AgentNamespace string                    `js:"agentNamespace"`
+	InjectTimeout  time.Duration             `js:"injectTimeout"`
+}
+
+// NewNodeDisruptor creates an instance of a NodeDisruptor and returns it as a goja object
+func NewNodeDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("NodeDisruptor constructor expects a non-null argument")
+	}
+
+	arg := nodeDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid NodeDisruptor argument: %w", err)
+	}
+
+	options := disruptors.NodeDisruptorOptions{
+		AgentImage:     arg.AgentImage,
+		AgentNamespace: arg.AgentNamespace,
+		InjectTimeout:  arg.InjectTimeout,
+	}
+
+	disruptor, err := disruptors.NewNodeDisruptor(ctx, k8s, arg.Name, arg.Select.Labels, options)
+	if err != nil {
+		return nil, fmt.Errorf("error creating NodeDisruptor: %w", err)
+	}
+
+	obj, err := buildJsNodeDisruptor(ctx, rt, disruptor)
+	if err != nil {
+		return nil, fmt.Errorf("error creating NodeDisruptor: %w", err)
 	}
 
 	return obj, nil

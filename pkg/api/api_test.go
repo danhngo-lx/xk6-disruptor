@@ -173,18 +173,16 @@ func Test_PodDisruptorConstructor(t *testing.T) {
 		{
 			description: "invalid constructor with malformed options",
 			script: `
-			const selector = {
+			const config = {
 				namespace: "namespace",
 				select: {
 					labels: {
 						app: "app"
 					}
-				}
-			}
-			const opts = {
+				},
 				timeout: "0s"
 			}
-			new PodDisruptor(selector, opts)
+			new PodDisruptor(config)
 			`,
 			expectError: true,
 		},

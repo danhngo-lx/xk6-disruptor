@@ -30,11 +30,14 @@ func NewRootCommand(env runtime.Environment) *RootCommand {
 	rootCmd.AddCommand(BuildTCPDropCmd(env, config))
 	rootCmd.AddCommand(BuildStressCmd(env, config))
 	rootCmd.AddCommand(BuildMemoryStressCmd(env, config))
+	rootCmd.AddCommand(BuildDiskFillCmd(env, config))
+	rootCmd.AddCommand(BuildIOStressCmd(env, config))
 	rootCmd.AddCommand(BuiltCleanupCmd(env))
 	rootCmd.AddCommand(BuildNetworkDropCmd(env, config))
 	rootCmd.AddCommand(BuildNetworkShapeCmd(env, config))
 	rootCmd.AddCommand(BuildNetworkPartitionCmd(env, config))
 	rootCmd.AddCommand(BuildDNSCmd(env, config))
+	rootCmd.AddCommand(BuildKubeletKillCmd(env, config))
 
 	return &RootCommand{
 		cmd: rootCmd,
