@@ -25,6 +25,7 @@ func NewRootCommand(env runtime.Environment) *RootCommand {
 
 	rootCmd := buildRootCmd(config)
 	rootCmd.AddCommand(BuildHTTPCmd(env, config))
+	rootCmd.AddCommand(BuildHTTPResetPeerCmd(env, config))
 	rootCmd.AddCommand(BuildGrpcCmd(env, config))
 	rootCmd.AddCommand(BuildTCPDropCmd(env, config))
 	rootCmd.AddCommand(BuildStressCmd(env, config))

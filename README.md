@@ -82,6 +82,7 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 | Network drop | `injectNetworkFaults` | Drop ingress packets by port/protocol via iptables | ✅ Stable |
 | Pod termination | `terminatePods` | Terminate a random subset of target pods | ✅ Stable |
 | Crash loop | `injectCrashLoopFault` | Repeatedly kill a container's PID 1 to drive the pod into CrashLoopBackOff | ✅ Stable |
+| TCP reset peer | `injectHTTPResetPeerFaults` | Abruptly RST TCP connections to simulate flaky/lossy network at the transport layer | ⚠️ Experimental |
 | Network shaping | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem` | ⚠️ Experimental |
 | Network partition | `injectNetworkPartition` | Block traffic to/from specific CIDRs or IPs | ⚠️ Experimental |
 | CPU stress | `injectCPUStress` | Consume a percentage of CPU across N cores | ⚠️ Experimental |
@@ -91,6 +92,20 @@ It offers an [API](https://k6.io/docs/javascript-api/xk6-disruptor/api) for crea
 > ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
 
 See the [architecture guide](docs/01-development/02-architecture.md#experimental-fault-types) for detailed usage, field references, and examples for each experimental fault.
+
+### TCP Reset Peer
+
+Intercepts TCP connections on the target port and sends a RST packet (`SO_LINGER=0`), causing clients to receive `connection reset by peer`. Unlike `injectHTTPFaults`, this operates at the TCP layer — the client never sees an HTTP response.
+
+```js
+// Reset 30% of connections after a 500ms delay (mid-flight reset)
+disruptor.injectHTTPResetPeerFaults(
+  { port: 8080, resetTimeout: 500, toxicity: 0.3 },
+  "60s",
+);
+```
+
+Fields: `port` (target port), `resetTimeout` (ms to wait before RST, default `0`), `toxicity` (fraction 0–1 of connections to reset, default `1.0`). Accepts the same optional 3rd options argument as `injectHTTPFaults` (`proxyPort`, `nonTransparent`).
 
 ### Network Shaping
 

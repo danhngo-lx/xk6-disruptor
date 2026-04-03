@@ -50,6 +50,7 @@ Supported fault types:
 | `injectNetworkFaults` | ✅ Stable | iptables: drop ingress packets by port/protocol |
 | `terminatePods` | ✅ Stable | Delete a subset of target pods |
 | `injectCrashLoopFault` | ✅ Stable | Repeatedly kill a container's PID 1 to drive it into CrashLoopBackOff |
+| `injectHTTPResetPeerFaults` | ⚠️ Experimental | TCP proxy: abruptly RST connections to simulate flaky/lossy network |
 | `injectNetworkShapingFaults` | ⚠️ Experimental | tc netem: delay, jitter, loss, corruption, duplication, rate limit |
 | `injectNetworkPartition` | ⚠️ Experimental | iptables: block traffic to/from specific CIDRs |
 | `injectCPUStress` | ⚠️ Experimental | Consume a target % of CPU across N cores |
@@ -218,6 +219,55 @@ const disruptor = new ServiceDisruptor('my-service', 'my-ns', {
 ## Experimental Fault Types
 
 The following faults are code-complete but have not been validated end-to-end in a live cluster. They require the custom agent image (see [Agent Image Configuration](#agent-image-configuration)). All require the agent to run with `NET_ADMIN` capability.
+
+---
+
+### HTTP Reset Peer — `injectHTTPResetPeerFaults(fault, duration, options?)`
+
+Intercepts TCP connections on the target port and abruptly closes them by sending a TCP RST packet (`SO_LINGER=0`). This simulates a flaky or lossy network at the **TCP layer**, distinct from `injectHTTPFaults` which operates at the HTTP application layer and returns well-formed HTTP error responses.
+
+A configurable fraction of connections (`toxicity`) are reset; the remainder are transparently proxied to the upstream unchanged. This matches the behaviour of [LitmusChaos's `pod-http-reset-peer`](https://litmuschaos.github.io/litmus/experiments/categories/pods/pod-http-reset-peer/) experiment.
+
+**`HTTPResetPeerFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | `number \| string` | `80` | Target port to intercept |
+| `resetTimeout` | `number` (ms) | `0` | How long to wait after accepting a connection before sending the RST. `0` = reset immediately. |
+| `toxicity` | `number` | `1.0` | Fraction of connections to reset (0.0–1.0). Connections not selected are transparently forwarded. |
+
+**`HTTPDisruptionOptions` fields** (optional 3rd argument — same as `injectHTTPFaults`):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `proxyPort` | `number` | `8000` | Port the TCP proxy listens on inside the pod |
+| `nonTransparent` | `boolean` | `false` | Skip iptables setup; load traffic must go to `pod-IP:proxyPort` directly |
+
+```js
+// Reset all connections on port 8080 immediately
+disruptor.injectHTTPResetPeerFaults(
+  { port: 8080 },
+  "60s",
+);
+
+// Reset 30% of connections, waiting 500ms after accepting before sending RST
+// (allows the client to send its request before the reset, mimicking a mid-flight failure)
+disruptor.injectHTTPResetPeerFaults(
+  { port: 8080, resetTimeout: 500, toxicity: 0.3 },
+  "60s",
+);
+```
+
+**How it differs from `injectHTTPFaults` with an error code:**
+
+| | `injectHTTPFaults` (errorCode) | `injectHTTPResetPeerFaults` |
+|---|---|---|
+| Layer | HTTP (application) | TCP (transport) |
+| Client sees | A valid HTTP response (e.g. 503) | `connection reset by peer` / `ECONNRESET` |
+| Partial reads | No — response is complete | Yes — RST can interrupt mid-stream |
+| Useful for | Testing retry logic on HTTP errors | Testing resilience to network-level disruptions |
+
+**Requirements:** `iptables` must be available in the agent image and the agent needs `NET_ADMIN` capability.
 
 ---
 
@@ -472,6 +522,7 @@ The `xk6-disruptor-agent` binary exposes the following subcommands, each corresp
 | Command | Description |
 |---|---|
 | `http` | Transparent HTTP reverse proxy with delay, error injection, and body/header modification |
+| `http-reset-peer` | TCP proxy that abruptly resets connections (RST) with configurable toxicity and timeout |
 | `grpc` | Transparent gRPC proxy with delay and status code injection |
 | `network-drop` | Drop packets matching a port/protocol filter via iptables |
 | `network-shape` | Shape traffic with `tc netem` (delay, jitter, loss, corruption, duplication, rate) |

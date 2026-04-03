@@ -15,6 +15,9 @@ type ProtocolFaultInjector interface {
 	// InjectGrpcFault injects faults in the grpc requests sent to the disruptor's targets
 	// for the specified duration
 	InjectGrpcFaults(ctx context.Context, fault GrpcFault, duration time.Duration, options GrpcDisruptionOptions) error
+	// InjectHTTPResetPeerFaults intercepts TCP connections on the target port and abruptly
+	// resets them (SO_LINGER=0) to simulate flaky network conditions at the TCP layer.
+	InjectHTTPResetPeerFaults(ctx context.Context, fault HTTPResetPeerFault, duration time.Duration, options HTTPDisruptionOptions) error
 }
 
 // HTTPDisruptionOptions defines options for the injection of HTTP faults in a target pod
@@ -56,6 +59,21 @@ type HTTPFault struct {
 	ModifyResponseBody string `js:"modifyResponseBody"`
 	// ModifyResponseHeaders adds or replaces headers in the upstream response
 	ModifyResponseHeaders map[string]string `js:"modifyResponseHeaders"`
+}
+
+// HTTPResetPeerFault specifies a TCP reset-peer fault to be injected.
+// Instead of returning an HTTP error response, the proxy abruptly closes the TCP
+// connection by sending a RST packet after an optional delay.
+type HTTPResetPeerFault struct {
+	// Port is the target port to intercept.
+	Port intstr.IntOrString
+	// ResetTimeout is how long to wait after accepting a connection before sending the RST.
+	// Zero means reset immediately.
+	ResetTimeout time.Duration `js:"resetTimeout"`
+	// Toxicity is the fraction of connections (0.0–1.0) to reset.
+	// Connections not selected are transparently proxied to the upstream.
+	// Defaults to 1.0 (all connections are reset).
+	Toxicity float32 `js:"toxicity"`
 }
 
 // GrpcFault specifies a fault to be injected in grpc requests

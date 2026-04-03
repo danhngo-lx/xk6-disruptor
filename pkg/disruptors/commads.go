@@ -129,6 +129,43 @@ func buildHTTPFaultCmd(
 	return cmd
 }
 
+func buildHTTPResetPeerCmd(
+	targetAddress string,
+	fault HTTPResetPeerFault,
+	duration time.Duration,
+	options HTTPDisruptionOptions,
+) []string {
+	cmd := []string{
+		"xk6-disruptor-agent",
+		"http-reset-peer",
+		"-d", utils.DurationSeconds(duration),
+	}
+
+	if fault.Port != intstr.NullValue {
+		cmd = append(cmd, "-t", fault.Port.Str())
+	}
+
+	if fault.ResetTimeout > 0 {
+		cmd = append(cmd, "--reset-timeout", utils.DurationMillSeconds(fault.ResetTimeout))
+	}
+
+	if fault.Toxicity > 0 {
+		cmd = append(cmd, "--toxicity", fmt.Sprint(fault.Toxicity))
+	}
+
+	if options.ProxyPort != 0 {
+		cmd = append(cmd, "-p", fmt.Sprint(options.ProxyPort))
+	}
+
+	if options.NonTransparent {
+		cmd = append(cmd, "--transparent=false")
+	}
+
+	cmd = append(cmd, "--upstream-host", targetAddress)
+
+	return cmd
+}
+
 func buildNetworkFaultCmd(fault NetworkFault, duration time.Duration) []string {
 	cmd := []string{
 		"xk6-disruptor-agent",
@@ -398,6 +435,34 @@ type PodDNSFaultCommand struct {
 func (c PodDNSFaultCommand) Commands(_ corev1.Pod) (VisitCommands, error) {
 	return VisitCommands{
 		Exec:    buildDNSFaultCmd(c.fault, c.duration),
+		Cleanup: buildCleanupCmd(),
+	}, nil
+}
+
+// PodHTTPResetPeerFaultCommand implements the PodVisitCommands interface for injecting HTTPResetPeerFaults in a Pod
+type PodHTTPResetPeerFaultCommand struct {
+	fault    HTTPResetPeerFault
+	duration time.Duration
+	options  HTTPDisruptionOptions
+}
+
+// Commands returns the command for injecting an HTTPResetPeerFault in a Pod
+func (c PodHTTPResetPeerFaultCommand) Commands(pod corev1.Pod) (VisitCommands, error) {
+	port, err := utils.FindPort(c.fault.Port, pod)
+	if err != nil {
+		return VisitCommands{}, err
+	}
+
+	podFault := c.fault
+	podFault.Port = port
+
+	targetAddress, err := utils.PodIP(pod)
+	if err != nil {
+		return VisitCommands{}, err
+	}
+
+	return VisitCommands{
+		Exec:    buildHTTPResetPeerCmd(targetAddress, podFault, c.duration, c.options),
 		Cleanup: buildCleanupCmd(),
 	}, nil
 }

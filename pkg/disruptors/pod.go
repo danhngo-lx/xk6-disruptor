@@ -236,6 +236,39 @@ func (d *podDisruptor) InjectHTTPFaults(
 	return controller.Visit(ctx, visitor)
 }
 
+// InjectHTTPResetPeerFaults intercepts TCP connections on the target port and abruptly resets them.
+func (d *podDisruptor) InjectHTTPResetPeerFaults(
+	ctx context.Context,
+	fault HTTPResetPeerFault,
+	duration time.Duration,
+	options HTTPDisruptionOptions,
+) error {
+	if fault.Port.IsNull() || fault.Port.IsZero() {
+		fault.Port = DefaultTargetPort
+	}
+
+	command := PodHTTPResetPeerFaultCommand{
+		fault:    fault,
+		duration: duration,
+		options:  options,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
 // InjectGrpcFaults injects faults in the grpc requests sent to the disruptor's targets
 func (d *podDisruptor) InjectGrpcFaults(
 	ctx context.Context,

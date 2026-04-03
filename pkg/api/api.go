@@ -119,6 +119,39 @@ func (p *jsProtocolFaultInjector) InjectHTTPFaults(args ...sobek.Value) {
 	}
 }
 
+// InjectHTTPResetPeerFaults is a proxy method. Validates parameters and delegates to the Protocol Disruptor method.
+// Signature: injectHTTPResetPeerFaults(fault, duration, options?)
+func (p *jsProtocolFaultInjector) InjectHTTPResetPeerFaults(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("HTTPResetPeerFault and duration are required"))
+	}
+
+	fault := disruptors.HTTPResetPeerFault{}
+	err := convertValue(p.rt, args[0], &fault)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	err = convertValue(p.rt, args[1], &duration)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	opts := disruptors.HTTPDisruptionOptions{}
+	if len(args) > 2 {
+		err = convertValue(p.rt, args[2], &opts)
+		if err != nil {
+			common.Throw(p.rt, fmt.Errorf("invalid options argument: %w", err))
+		}
+	}
+
+	err = p.ProtocolFaultInjector.InjectHTTPResetPeerFaults(p.ctx, fault, duration, opts)
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
 // InjectGrpcFaults is a proxy method. Validates parameters and delegates to the PodDisruptor method
 func (p *jsProtocolFaultInjector) InjectGrpcFaults(args ...sobek.Value) {
 	if len(args) < 2 {

@@ -109,6 +109,40 @@ func (d *serviceDisruptor) InjectHTTPFaults(
 	return controller.Visit(ctx, visitor)
 }
 
+func (d *serviceDisruptor) InjectHTTPResetPeerFaults(
+	ctx context.Context,
+	fault HTTPResetPeerFault,
+	duration time.Duration,
+	options HTTPDisruptionOptions,
+) error {
+	port, err := utils.GetTargetPort(d.service, fault.Port)
+	if err != nil {
+		return err
+	}
+	fault.Port = port
+
+	command := PodHTTPResetPeerFaultCommand{
+		fault:    fault,
+		duration: duration,
+		options:  options,
+	}
+
+	visitor := NewPodAgentVisitor(
+		d.helper,
+		PodAgentVisitorOptions{Timeout: d.options.InjectTimeout, AgentImage: d.options.AgentImage},
+		command,
+	)
+
+	targets, err := d.selector.Targets(ctx)
+	if err != nil {
+		return err
+	}
+
+	controller := NewPodController(targets)
+
+	return controller.Visit(ctx, visitor)
+}
+
 func (d *serviceDisruptor) InjectGrpcFaults(
 	ctx context.Context,
 	fault GrpcFault,
