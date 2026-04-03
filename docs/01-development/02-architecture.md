@@ -43,31 +43,150 @@ const disruptor = new PodDisruptor({
 
 Supported fault types:
 
-| Method | Fault | Description | Status |
-|---|---|---|---|
-| `injectHTTPFaults` | `HTTPFault` | Delay, error code injection, path exclusions, response body/header modification | ✅ Stable |
-| `injectGrpcFaults` | `GrpcFault` | Delay, gRPC status code injection, service exclusions | ✅ Stable |
-| `injectNetworkFaults` | `NetworkFault` | Drop all or filtered (port/protocol) ingress packets via iptables | ✅ Stable |
-| `terminatePods` | `PodTerminationFault` | Terminate a random subset of target pods | ✅ Stable |
-| `injectCrashLoopFault` | `CrashLoopFault` | Repeatedly kill a container's main process (PID 1) to drive the pod into CrashLoopBackOff | ✅ Stable |
-| `injectNetworkShapingFaults` | `NetworkShapingFault` | Packet delay/jitter, loss %, corruption, duplication, and rate limiting via `tc netem` | ⚠️ Experimental |
-| `injectNetworkPartition` | `NetworkPartitionFault` | Block ingress/egress/both traffic to specific CIDRs or IPs via iptables | ⚠️ Experimental |
-| `injectCPUStress` | `CPUStressFault` | Consume a target percentage of CPU across N cores | ⚠️ Experimental |
-| `injectMemoryStress` | `MemoryStressFault` | Allocate and hold a specified number of bytes of memory | ⚠️ Experimental |
-| `injectDNSFaults` | `DNSFault` | Return NXDOMAIN for a fraction of DNS queries or spoof specific domains to fake IPs | ⚠️ Experimental |
+| Method | Status | Description |
+|---|---|---|
+| `injectHTTPFaults` | ✅ Stable | HTTP proxy: delay, error code, body/header modification |
+| `injectGrpcFaults` | ✅ Stable | gRPC proxy: delay and status code injection |
+| `injectNetworkFaults` | ✅ Stable | iptables: drop ingress packets by port/protocol |
+| `terminatePods` | ✅ Stable | Delete a subset of target pods |
+| `injectCrashLoopFault` | ✅ Stable | Repeatedly kill a container's PID 1 to drive it into CrashLoopBackOff |
+| `injectNetworkShapingFaults` | ⚠️ Experimental | tc netem: delay, jitter, loss, corruption, duplication, rate limit |
+| `injectNetworkPartition` | ⚠️ Experimental | iptables: block traffic to/from specific CIDRs |
+| `injectCPUStress` | ⚠️ Experimental | Consume a target % of CPU across N cores |
+| `injectMemoryStress` | ⚠️ Experimental | Allocate and hold a given amount of memory |
+| `injectDNSFaults` | ⚠️ Experimental | DNS proxy: NXDOMAIN injection and domain spoofing |
 
 > ⚠️ Experimental faults are code-complete but have not been validated end-to-end in a live cluster. They require the custom agent image built from this fork.
 
-### CrashLoopFault
+---
 
-`injectCrashLoopFault` does not use the ephemeral agent container. It execs `kill -9 1` directly into the target container via the Kubernetes API, causing the container to exit with a non-zero code. Kubernetes restarts it with exponential backoff (10s, 20s, 40s, 80s, 160s, 300s). After ~5–6 kills the pod enters CrashLoopBackOff.
+### `injectHTTPFaults(fault, duration, options?)`
+
+Injects faults at the HTTP layer by running a transparent reverse proxy inside the pod. All HTTP traffic on the target port is redirected through it via iptables (unless `nonTransparent` is set).
+
+**`HTTPFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | `number \| string` | `80` | Target port (number or named port, e.g. `8080` or `"http"`) |
+| `averageDelay` | `number` (ms) | `0` | Average delay added to every request in milliseconds |
+| `delayVariation` | `number` (ms) | `0` | Variation around `averageDelay` (uniform distribution). Only used when `averageDelay > 0`. |
+| `errorRate` | `number` | `0` | Fraction of requests that return an error (0.0–1.0) |
+| `errorCode` | `number` | `0` | HTTP status code returned for errored requests (e.g. `500`, `503`) |
+| `errorBody` | `string` | `""` | Response body returned for errored requests |
+| `exclude` | `string` | `""` | Comma-separated list of URL paths to exclude from disruption (e.g. `"/health,/ready"`) |
+| `modifyResponseBody` | `string` | `""` | Replaces the upstream response body with this string when non-empty |
+| `modifyResponseHeaders` | `Record<string, string>` | `{}` | Adds or overwrites headers in the upstream response |
+
+**`HTTPDisruptionOptions` fields** (optional 3rd argument — see [HTTP Fault Options](#http-fault-options)):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `proxyPort` | `number` | `8000` | Port the proxy listens on inside the pod |
+| `nonTransparent` | `boolean` | `false` | Skip iptables setup; load traffic must go to `pod-IP:proxyPort` directly |
+
+```js
+disruptor.injectHTTPFaults(
+  {
+    port: 8080,
+    averageDelay: 150,      // add 150ms ± 30ms to every request
+    delayVariation: 30,
+    errorRate: 0.1,         // additionally fail 10% of requests
+    errorCode: 503,
+    exclude: "/health,/ready",
+  },
+  "60s",
+);
+```
+
+---
+
+### `injectGrpcFaults(fault, duration, options?)`
+
+Injects faults at the gRPC layer using a transparent proxy. Works the same way as HTTP faults but speaks the gRPC wire protocol.
+
+**`GrpcFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | `number \| string` | `80` | Target port |
+| `averageDelay` | `number` (ms) | `0` | Average delay added to every RPC call in milliseconds |
+| `delayVariation` | `number` (ms) | `0` | Variation around `averageDelay` |
+| `errorRate` | `number` | `0` | Fraction of calls that return a gRPC error (0.0–1.0) |
+| `statusCode` | `number` | `0` | [gRPC status code](https://grpc.github.io/grpc/core/md_doc_statuscodes.html) returned for errored calls (e.g. `14` = `UNAVAILABLE`) |
+| `statusMessage` | `string` | `""` | Message attached to the error status |
+| `exclude` | `string` | `""` | Comma-separated list of gRPC service names to exclude |
+
+```js
+disruptor.injectGrpcFaults(
+  {
+    port: 9090,
+    averageDelay: 200,
+    errorRate: 0.05,
+    statusCode: 14,         // UNAVAILABLE
+    statusMessage: "injected fault",
+  },
+  "60s",
+);
+```
+
+---
+
+### `injectNetworkFaults(fault, duration)`
+
+Drops ingress packets matching a port and/or protocol filter using iptables. Useful for simulating a completely unresponsive service port or protocol.
+
+**`NetworkFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port` | `number` | `0` | Target port. `0` means all ports. |
+| `protocol` | `string` | `""` | Protocol to filter: `"tcp"`, `"udp"`, `"icmp"`, or `""` for all. |
+
+```js
+// Drop all incoming TCP traffic on port 8080
+disruptor.injectNetworkFaults(
+  { port: 8080, protocol: "tcp" },
+  "60s",
+);
+
+// Drop all incoming traffic (any port, any protocol)
+disruptor.injectNetworkFaults({}, "60s");
+```
+
+---
+
+### `terminatePods(fault)`
+
+Deletes a subset of the disruptor's target pods. Kubernetes will restart them according to the Deployment/StatefulSet controller.
+
+**`PodTerminationFault` fields** (1st argument):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `count` | `number \| string` | — | Number of pods to terminate, or a percentage string (e.g. `"50%"`). |
+| `timeout` | `number` (ms) | `10000` | How long to wait for each pod to terminate before returning an error. |
+
+```js
+// Terminate 1 pod and wait up to 30s for it to stop
+disruptor.terminatePods({ count: 1, timeout: 30000 });
+
+// Terminate 50% of target pods
+disruptor.terminatePods({ count: "50%" });
+```
+
+---
+
+### `injectCrashLoopFault(fault, duration)`
+
+Does **not** use the ephemeral agent container. Executes `kill -9 1` directly into the target container via the Kubernetes exec API, causing the container to exit. Kubernetes restarts it with exponential backoff (10s → 20s → 40s → 80s → 160s → 300s). After ~5–6 kills the pod enters `CrashLoopBackOff`.
 
 **`CrashLoopFault` fields** (1st argument):
 
-| Field | Type | Required | Description |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `container` | `string` | Yes | Name of the container whose PID 1 will be killed |
-| `count` | `number` | No | Maximum number of kills. `0` (default) means kill repeatedly for the full duration. |
+| `container` | `string` | — | Name of the container whose PID 1 will be killed |
+| `count` | `number` | `0` | Maximum number of kills. `0` means kill repeatedly for the full duration. |
 
 ```js
 disruptor.injectCrashLoopFault(
@@ -76,7 +195,7 @@ disruptor.injectCrashLoopFault(
 );
 ```
 
-**Recovery:** No manual cleanup is needed. The pod manifest is not changed. Once the disruptor stops, Kubernetes will eventually restart the container successfully after the backoff timer expires (up to 5 minutes after the last kill).
+**Recovery:** No manual cleanup needed. The pod manifest is not changed. Once the disruptor stops, Kubernetes will eventually restart the container successfully after the backoff timer expires (up to 5 minutes after the last kill).
 
 ### ServiceDisruptor
 
