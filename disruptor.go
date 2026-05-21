@@ -4,6 +4,7 @@ package disruptor
 
 import (
 	"fmt"
+	"sync"
 
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
@@ -27,13 +28,19 @@ func init() {
 
 // RootModule is the global module object type. It is instantiated once per test
 // run and will be used to create `k6/x/disruptor` module instances for each VU.
-type RootModule struct{}
+// It also owns the registration of the extension's k6 metrics, which is done
+// lazily on the first VU instance (the metrics registry is per-test, shared
+// across VUs).
+type RootModule struct {
+	registerMetrics sync.Once
+	metrics         *api.Metrics
+}
 
 // ModuleInstance represents an instance of the JS module.
 type ModuleInstance struct {
-	vu modules.VU
-	// instance of a Kubernetes helper
-	k8s kubernetes.Kubernetes
+	vu      modules.VU
+	k8s     kubernetes.Kubernetes
+	metrics *api.Metrics
 }
 
 // Ensure the interfaces are implemented correctly.
@@ -43,15 +50,20 @@ var (
 )
 
 // NewModuleInstance returns a new instance of the disruptor module for each VU.
-func (*RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
+func (rm *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	k8s, err := kubernetes.New()
 	if err != nil {
 		common.Throw(vu.Runtime(), fmt.Errorf("error creating Kubernetes helper: %w", err))
 	}
 
+	rm.registerMetrics.Do(func() {
+		rm.metrics = api.RegisterMetrics(vu.InitEnv().Registry)
+	})
+
 	return &ModuleInstance{
-		vu:  vu,
-		k8s: k8s,
+		vu:      vu,
+		k8s:     k8s,
+		metrics: rm.metrics,
 	}
 }
 
@@ -72,7 +84,7 @@ func (m *ModuleInstance) newPodDisruptor(c sobek.ConstructorCall) *sobek.Object 
 	rt := m.vu.Runtime()
 	ctx := m.vu.Context()
 
-	disruptor, err := api.NewPodDisruptor(ctx, rt, c, m.k8s)
+	disruptor, err := api.NewPodDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
 	if err != nil {
 		common.Throw(rt, fmt.Errorf("error creating PodDisruptor: %w", err))
 	}
@@ -84,7 +96,7 @@ func (m *ModuleInstance) newServiceDisruptor(c sobek.ConstructorCall) *sobek.Obj
 	rt := m.vu.Runtime()
 	ctx := m.vu.Context()
 
-	disruptor, err := api.NewServiceDisruptor(ctx, rt, c, m.k8s)
+	disruptor, err := api.NewServiceDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
 	if err != nil {
 		common.Throw(rt, fmt.Errorf("error creating ServiceDisruptor: %w", err))
 	}
@@ -97,7 +109,7 @@ func (m *ModuleInstance) newNodeDisruptor(c sobek.ConstructorCall) *sobek.Object
 	rt := m.vu.Runtime()
 	ctx := m.vu.Context()
 
-	disruptor, err := api.NewNodeDisruptor(ctx, rt, c, m.k8s)
+	disruptor, err := api.NewNodeDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
 	if err != nil {
 		common.Throw(rt, fmt.Errorf("error creating NodeDisruptor: %w", err))
 	}

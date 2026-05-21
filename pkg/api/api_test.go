@@ -199,7 +199,7 @@ func Test_PodDisruptorConstructor(t *testing.T) {
 			}
 
 			err = env.registerConstructor("PodDisruptor", func(e *testEnv, c sobek.ConstructorCall) (*sobek.Object, error) {
-				return NewPodDisruptor(t.Context(), e.rt, c, e.k8s)
+				return NewPodDisruptor(t.Context(), e.rt, c, e.k8s, nil, nil)
 			})
 			if err != nil {
 				t.Errorf("error in test setup %v", err)
@@ -487,7 +487,7 @@ func Test_JsPodDisruptor(t *testing.T) {
 			}
 
 			err = env.registerConstructor("PodDisruptor", func(e *testEnv, c sobek.ConstructorCall) (*sobek.Object, error) {
-				return NewPodDisruptor(t.Context(), e.rt, c, e.k8s)
+				return NewPodDisruptor(t.Context(), e.rt, c, e.k8s, nil, nil)
 			})
 			if err != nil {
 				t.Errorf("error in test setup %v", err)
@@ -590,7 +590,7 @@ func Test_ServiceDisruptorConstructor(t *testing.T) {
 			}
 
 			err = env.registerConstructor("ServiceDisruptor", func(e *testEnv, c sobek.ConstructorCall) (*sobek.Object, error) {
-				return NewServiceDisruptor(t.Context(), e.rt, c, e.k8s)
+				return NewServiceDisruptor(t.Context(), e.rt, c, e.k8s, nil, nil)
 			})
 			if err != nil {
 				t.Errorf("error in test setup %v", err)

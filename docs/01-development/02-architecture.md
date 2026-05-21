@@ -729,3 +729,61 @@ The `xk6-disruptor-agent` binary exposes the following subcommands, each corresp
 | `kubelet-kill` | Stop the kubelet systemd service via nsenter, wait for duration, then restart it (privileged pod only) |
 | `cleanup` | Terminate the running agent and clean up any installed resources |
 
+## Metrics
+
+The extension emits k6 metrics for every fault injection. The user-facing catalog (metric names, tag values, Grafana annotation queries) lives in the [README](../../README.md#metrics); this section documents the implementation so contributors know where to plug in new fault types.
+
+### Registration lifecycle
+
+Metrics are registered once per test run, not per VU:
+
+1. `RootModule.NewModuleInstance` (in [`disruptor.go`](../../disruptor.go)) runs once per VU but its `sync.Once` ensures the registry calls happen on the first VU only.
+2. The shared `*api.Metrics` instance is passed into every `ModuleInstance`, then forwarded into `api.NewPodDisruptor` / `NewServiceDisruptor` / `NewNodeDisruptor` along with the VU handle.
+3. Each disruptor constructor builds a `TargetInfo` describing what it targets (disruptor type, namespace, name/selector) and wraps `(vu, metrics, target)` in a private `*tracker` that is shared across all the sub-injectors composed into the JS disruptor object.
+
+The registry is per-test, so two VUs registering the same metric name would conflict; `sync.Once` is what avoids that.
+
+### Emission point
+
+Every JS-facing method on a disruptor calls the underlying disruptor through `tracker.track(ctx, faultType, fn)`:
+
+```go
+err = p.tracker.track(p.ctx, "http", func() error {
+    return p.ProtocolFaultInjector.InjectHTTPFaults(p.ctx, fault, duration, opts)
+})
+```
+
+`track` (in [`pkg/api/metrics.go`](../../pkg/api/metrics.go)) brackets `fn` with:
+
+1. `fault_active` gauge → `1` and `faults_injected_total` counter `+1` (start).
+2. `fn()` runs synchronously — most `Inject*` methods block for the full fault `duration`.
+3. `fault_active` gauge → `0` (stop, in all paths including error).
+4. If `fn()` returned an error: `faults_failed_total` counter `+1` with an `error_class` tag derived by `classifyError`.
+5. `fault_duration_seconds` trend with an `outcome` tag of `success` or `error`.
+
+When `vu.State()` returns `nil` (the VU is in `setup()` / `teardown()`) `track` is a pass-through — it runs `fn` without emitting anything. This is also what unit tests rely on by passing `nil` for both `vu` and `metrics`.
+
+### Adding metrics to a new fault type
+
+When you add a new `Inject*` method:
+
+1. Add the `tracker` field to the new `js…FaultInjector` struct, matching the existing pattern (`ctx`, `rt`, `tracker`, embedded disruptor interface).
+2. Wrap the underlying call in `p.tracker.track(p.ctx, "<fault_type>", func() error { … })`. Choose a snake_case `fault_type` value not already used by other disruptors.
+3. Wire `tracker: tr` into the corresponding `buildJsPodDisruptor` / `buildJsServiceDisruptor` / `buildJsNodeDisruptor` initializer.
+
+No registration step is needed — the same five metrics carry the new `fault_type` value as a tag.
+
+### error_class taxonomy
+
+`classifyError` does a coarse classification on the returned error for the `error_class` tag. It is intentionally shallow — the tag is a faceting hint for dashboards, not a structured error type. Current buckets:
+
+| `error_class` | Source |
+|---|---|
+| `timeout` | `context.DeadlineExceeded` or error message containing `timeout` / `timed out` |
+| `canceled` | `context.Canceled` |
+| `exec_failed` | Error message contains `exec` (typically a `kubectl exec` failure into the agent container) |
+| `inject_failed` | Error message contains `inject` (typically an agent ephemeral-container injection failure) |
+| `other` | Anything else |
+
+Add more buckets only if a dashboard would meaningfully care about the distinction.
+

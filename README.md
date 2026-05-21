@@ -351,6 +351,52 @@ kubectl patch deployment <name> -n <namespace> \
 
 If you cannot modify the Deployment, use `nonTransparent: true` in `HTTPDisruptionOptions` and target pod IPs directly (obtained via `disruptor.targetIPs()`). See the [architecture guide](docs/01-development/02-architecture.md#service-mesh-compatibility) for details.
 
+## Metrics
+
+xk6-disruptor emits k6 metrics for every fault injection so you can correlate disruptor activity with k6 HTTP/gRPC results on the same Grafana dashboard, Prometheus alert, or InfluxDB query — without instrumenting anything yourself.
+
+### Emitted metrics
+
+Every metric carries the same four base tags:
+
+| Tag | Values |
+|---|---|
+| `fault_type` | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill` |
+| `disruptor` | `pod`, `service`, `node` |
+| `target_namespace` | Kubernetes namespace the disruptor targets (may be empty for cluster-scoped node faults) |
+| `target_name` | Service name, node name, or serialized pod selector (e.g. `app=frontend,!canary=true`) |
+
+| Metric | Type | When emitted |
+|---|---|---|
+| `xk6_disruptor_fault_active` | Gauge | `1` immediately before the underlying call runs; back to `0` when it returns (success **or** error). |
+| `xk6_disruptor_faults_injected_total` | Counter | `+1` per fault-injection call at start. |
+| `xk6_disruptor_faults_failed_total` | Counter | `+1` when an injection call returns an error. Adds `error_class` tag (`timeout`, `canceled`, `exec_failed`, `inject_failed`, `other`). |
+| `xk6_disruptor_fault_duration_seconds` | Trend | Wall-clock duration of each call. Adds `outcome` tag (`success` / `error`). |
+| `xk6_disruptor_targets_selected` | Gauge | Number of targets matched by the selector. Emitted when `disruptor.targets()` is called from JS. |
+
+### Grafana annotations
+
+`xk6_disruptor_fault_active` is designed to drive Grafana annotations or shaded "fault window" regions on dashboards.
+
+**Shaded region while a fault is active** (Prometheus annotation query):
+
+```promql
+xk6_disruptor_fault_active == 1
+```
+
+**Vertical markers at each fault start** (annotation query for discrete events):
+
+```promql
+changes(xk6_disruptor_faults_injected_total[$__rate_interval]) > 0
+```
+
+In a k6 run, export to Prometheus / InfluxDB / etc. via the standard k6 output flag — e.g. `k6 run --out experimental-prometheus-rw=… script.js` — and the disruptor metrics flow alongside `http_req_duration` and friends.
+
+### Caveats
+
+- **`setup()` / `teardown()`**: faults injected from these phases run normally but emit no metrics, because k6 does not expose VU state outside the default function.
+- **Concurrent injections with identical tags**: if two goroutines inject the same `fault_type` against the same target at the same time, the gauge drops to `0` as soon as the first one finishes even though the second is still active. In practice this is rare; a per-injection ID tag could disambiguate at the cost of higher cardinality.
+
 ## Use cases
 
 The main use case for xk6-disruptor is to test the resiliency of an application of diverse types of disruptions by reproducing their effects without reproducing their root causes. For example, inject delays in the HTTP requests an application makes to a service without having to stress or interfere with the infrastructure (network, nodes) on which the service runs or affect other workloads in unexpected ways.
