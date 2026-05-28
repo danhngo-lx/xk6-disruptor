@@ -71,7 +71,7 @@ export default function () {
 
 The project, at this time, is intended to test systems running in Kubernetes. Other platforms are not supported at this time.
 
-It offers an API for creating disruptors that target one specific type of component (e.g., Pods, Nodes) and is capable of injecting different kinds of faults. Disruptors exist for Pods, Services, and Nodes.
+It offers an API for creating disruptors that target one specific type of component (e.g., Pods, Nodes) and is capable of injecting different kinds of faults. Disruptors exist for Pods, Services, Nodes, and Workloads (Deployments / StatefulSets).
 
 ### Pod / Service fault types
 
@@ -101,6 +101,12 @@ It offers an API for creating disruptors that target one specific type of compon
 | Node memory stress | `injectMemoryStress` | Run a memory stressor at node level via a privileged pod | ⚠️ Experimental |
 | Node IO stress | `injectIOStress` | Run an IO stressor at node level via a privileged pod | ⚠️ Experimental |
 | Kubelet service kill | `injectKubeletServiceKill` | Stop the kubelet service for a duration then restart it via nsenter | ⚠️ Experimental |
+
+### Workload fault types (`WorkloadDisruptor`)
+
+| Fault | API method | Description | Status |
+|---|---|---|---|
+| Replica change | `scaleReplicas` | Scale a Deployment / StatefulSet up or down (absolute, delta, or percentage), optionally auto-revert after a duration | ⚠️ Experimental |
 
 > ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
 
@@ -321,6 +327,98 @@ The service account running k6 needs the following permissions in addition to wh
 
 For `drain` and eviction operations the service account also needs `pods/eviction` in all namespaces.
 
+## WorkloadDisruptor
+
+`WorkloadDisruptor` targets Kubernetes workload objects (Deployments and StatefulSets) and changes their desired replica count to inject chaos at the workload level. Unlike `PodDisruptor` and `NodeDisruptor`, it requires no agent image and no privileged pod — all operations are pure Kubernetes API calls (Get + Update on `spec.replicas`).
+
+Typical scenarios:
+
+- Scale a Deployment to `0` to simulate a full outage of a dependency.
+- Reduce replicas by a delta (e.g. `-2`) to simulate partial capacity loss.
+- Halve replicas (`percentage: 50`) to simulate a rolling failure across a fleet.
+
+### Constructor
+
+```js
+import { WorkloadDisruptor } from "k6/x/disruptor";
+
+// Target a single Deployment by name
+const disruptor = new WorkloadDisruptor({
+  kind: "Deployment",
+  namespace: "default",
+  select: { name: "my-app" },
+});
+
+// Or target multiple workloads by label selector
+const disruptor = new WorkloadDisruptor({
+  kind: "Deployment",
+  namespace: "default",
+  select: { labels: { team: "platform" } },
+});
+```
+
+Constructor argument fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | `string` | Yes | Workload kind: `"Deployment"` or `"StatefulSet"`. |
+| `namespace` | `string` | No | Namespace to scope the lookup. Defaults to `"default"`. |
+| `select.name` | `string` | One-of | Target a single workload by exact name. |
+| `select.labels` | `object` | One-of | Match-all label map. Targets every workload of `kind` in `namespace` matching every label. |
+
+Exactly one of `select.name` or `select.labels` must be set.
+
+### `scaleReplicas(fault, duration?)`
+
+Applies a replica change to every selected workload concurrently. The original replica count of each workload is recorded on the disruptor; calling `cleanup()` later restores those originals.
+
+Fault fields (exactly **one** of `replicas`, `delta`, `percentage` must be set):
+
+| Field | Type | Description |
+|---|---|---|
+| `replicas` | `int32` | Absolute target replica count. `0` scales the workload to zero. |
+| `delta` | `int32` | Relative change. Negative values reduce; the result is clamped to `0` if it would go below zero. |
+| `percentage` | `int32` | Percent of current replicas (floor rounding; `50` halves, `0` scales to zero, `200` doubles). Must be `>= 0`. |
+| `autoRevert` | `bool` | Defaults to `false`. When `true`, the method blocks for `duration`, then restores each workload to its original replica count before returning. When `false`, the change is applied and the call returns immediately; replicas remain changed until `cleanup()` is called. |
+
+`duration` is required only when `autoRevert: true`.
+
+```js
+// Scale to zero and leave there until cleanup()
+disruptor.scaleReplicas({ replicas: 0 });
+
+// Remove 2 replicas for 30 s then auto-restore
+disruptor.scaleReplicas({ delta: -2, autoRevert: true }, "30s");
+
+// Halve replicas for 1 minute then auto-restore
+disruptor.scaleReplicas({ percentage: 50, autoRevert: true }, "1m");
+
+// Always call cleanup() (safe even when autoRevert was true; no-op for already-restored workloads)
+disruptor.cleanup();
+```
+
+### Targets
+
+`disruptor.targets()` returns the list of resolved workload refs as strings of the form `Kind/namespace/name`, e.g. `Deployment/default/my-app`. This also emits the `xk6_disruptor_targets_selected` metric.
+
+`disruptor.targetIPs()` always returns an empty array — pod IPs are not meaningful for a workload-level disruptor; resolve them via `PodDisruptor` or `Service.spec.selector` instead.
+
+### RBAC requirements for WorkloadDisruptor
+
+The service account running k6 needs permission to read **and update** the workload resources (not just the `/scale` subresource — the implementation writes `spec.replicas` directly so it works against both the real apiserver and client-go's fake clientset):
+
+```yaml
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets"]
+  verbs: ["get", "list", "update"]
+```
+
+### Caveats
+
+- **HPA conflicts:** if a HorizontalPodAutoscaler manages the target workload, your `scaleReplicas` change will fight the HPA. The HPA will re-set replicas to its computed value within ~15 seconds. For deterministic results, scale-disable the HPA before the test (`kubectl autoscale ... --min=N --max=N`) or temporarily delete it.
+- **`autoRevert: false`:** when `autoRevert` is false, replicas remain at the changed value until `cleanup()` is called. Always pair the disruptor with a `teardown()` that calls `cleanup()` to avoid leaking scale state.
+- **Single workload kind per disruptor:** one `WorkloadDisruptor` instance targets a single `kind` (Deployment **or** StatefulSet). Create two disruptors if you need both.
+
 ## Agent image configuration
 
 xk6-disruptor injects an ephemeral container (`xk6-disruptor-agent`) into target pods to apply faults. The container image used can be configured at three levels:
@@ -361,8 +459,8 @@ Every metric carries the same four base tags:
 
 | Tag | Values |
 |---|---|
-| `fault_type` | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill` |
-| `disruptor` | `pod`, `service`, `node` |
+| `fault_type` | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill`, `replica_change` |
+| `disruptor` | `pod`, `service`, `node`, `workload` |
 | `target_namespace` | Kubernetes namespace the disruptor targets (may be empty for cluster-scoped node faults) |
 | `target_name` | Service name, node name, or serialized pod selector (e.g. `app=frontend,!canary=true`) |
 

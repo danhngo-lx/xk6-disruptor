@@ -25,6 +25,8 @@ type Kubernetes interface {
 	PodHelper(namespace string) helpers.PodHelper
 	// NodeHelper returns a helpers.NodeHelper for cluster-wide node operations
 	NodeHelper() helpers.NodeHelper
+	// WorkloadHelper returns a helpers.WorkloadHelper for Deployment/StatefulSet scale operations
+	WorkloadHelper() helpers.WorkloadHelper
 }
 
 // k8s Holds the reference to the helpers for interacting with kubernetes
@@ -134,4 +136,9 @@ func (k *k8s) Client() kubernetes.Interface {
 // NodeHelper returns a NodeHelper for cluster-wide node operations
 func (k *k8s) NodeHelper() helpers.NodeHelper {
 	return helpers.NewNodeHelper(k.Interface)
+}
+
+// WorkloadHelper returns a WorkloadHelper for Deployment/StatefulSet scale operations
+func (k *k8s) WorkloadHelper() helpers.WorkloadHelper {
+	return helpers.NewWorkloadHelper(k.Interface)
 }

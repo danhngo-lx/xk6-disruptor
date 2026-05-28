@@ -52,6 +52,11 @@ func (f *FakeKubernetes) NodeHelper() helpers.NodeHelper {
 	return helpers.NewNodeHelper(f.client)
 }
 
+// WorkloadHelper returns a WorkloadHelper backed by the fake client
+func (f *FakeKubernetes) WorkloadHelper() helpers.WorkloadHelper {
+	return helpers.NewWorkloadHelper(f.client)
+}
+
 // GetFakeProcessExecutor returns the FakeProcessExecutor used by the helpers to mock
 // the execution of commands in a Pod
 func (f *FakeKubernetes) GetFakeProcessExecutor() *helpers.FakePodCommandExecutor {

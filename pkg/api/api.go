@@ -795,6 +795,128 @@ func NewServiceDisruptor(
 	return obj, nil
 }
 
+// ── WorkloadDisruptor JS API ─────────────────────────────────────────────────
+
+// jsReplicaChangeFaultInjector wraps the WorkloadDisruptor ScaleReplicas method for JS
+type jsReplicaChangeFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.ReplicaChangeFaultInjector
+}
+
+// ScaleReplicas signature: scaleReplicas(fault, duration?). duration is required only when fault.autoRevert is true.
+func (p *jsReplicaChangeFaultInjector) ScaleReplicas(args ...sobek.Value) {
+	if len(args) < 1 {
+		common.Throw(p.rt, fmt.Errorf("ReplicaChangeFault is required"))
+	}
+
+	fault := disruptors.ReplicaChangeFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if len(args) > 1 && args[1] != nil && !sobek.IsUndefined(args[1]) && !sobek.IsNull(args[1]) {
+		if err := convertValue(p.rt, args[1], &duration); err != nil {
+			common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+		}
+	}
+
+	err := p.tracker.track(p.ctx, "replica_change", func() error {
+		return p.ReplicaChangeFaultInjector.ScaleReplicas(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsWorkloadDisruptor combines the Disruptor base methods and the replica-change injector
+type jsWorkloadDisruptor struct {
+	jsDisruptor
+	jsReplicaChangeFaultInjector
+}
+
+// buildJsWorkloadDisruptor builds a goja object that implements the WorkloadDisruptor API
+func buildJsWorkloadDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.WorkloadDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsWorkloadDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsReplicaChangeFaultInjector: jsReplicaChangeFaultInjector{
+			ctx:                        ctx,
+			rt:                         rt,
+			tracker:                    tr,
+			ReplicaChangeFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// workloadDisruptorArg is the combined struct used to parse the WorkloadDisruptor constructor argument
+type workloadDisruptorArg struct {
+	Kind      string                        `js:"kind"`
+	Namespace string                        `js:"namespace"`
+	Select    disruptors.WorkloadAttributes `js:"select"`
+}
+
+// NewWorkloadDisruptor creates an instance of a WorkloadDisruptor and returns it as a goja object.
+// The context passed to this constructor controls the lifecycle of the WorkloadDisruptor.
+func NewWorkloadDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("WorkloadDisruptor constructor expects a non-null argument")
+	}
+
+	arg := workloadDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid WorkloadDisruptor argument: %w", err)
+	}
+
+	spec := disruptors.WorkloadSelectorSpec{
+		Kind:      arg.Kind,
+		Namespace: arg.Namespace,
+		Select:    arg.Select,
+	}
+
+	disruptor, err := disruptors.NewWorkloadDisruptor(ctx, k8s, spec)
+	if err != nil {
+		return nil, fmt.Errorf("error creating WorkloadDisruptor: %w", err)
+	}
+
+	targetName := arg.Select.Name
+	if targetName == "" {
+		targetName = FormatPodSelector(arg.Select.Labels, nil)
+	}
+	tr := newTracker(vu, m, TargetInfo{
+		Disruptor: "workload",
+		Namespace: spec.NamespaceOrDefault(),
+		Name:      arg.Kind + "/" + targetName,
+	})
+
+	obj, err := buildJsWorkloadDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating WorkloadDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
 // ── NodeDisruptor JS API ─────────────────────────────────────────────────────
 
 // jsNodeDrainFaultInjector wraps the NodeDisruptor Drain method for JS
