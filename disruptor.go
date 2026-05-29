@@ -4,6 +4,8 @@ package disruptor
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"sync"
 
 	"go.k6.io/k6/js/common"
@@ -22,6 +24,11 @@ func init() {
 	// (e.g. "Stream added", "Data frame received"). These are klog level 4+ messages
 	// that add noise to k6 output without providing actionable information.
 	klog.SetLogger(logr.Discard())
+
+	// Also suppress verbose logs from moby/spdystream which uses Go's standard log
+	// package when the DEBUG environment variable is set. These logs add noise
+	// without providing actionable information for k6 users.
+	log.SetOutput(io.Discard)
 
 	modules.Register("k6/x/disruptor", new(RootModule))
 }

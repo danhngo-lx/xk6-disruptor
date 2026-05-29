@@ -136,66 +136,94 @@ func (d *podDisruptor) InjectCrashLoopFault(ctx context.Context, fault CrashLoop
 		return err
 	}
 
+	if len(targets) == 0 {
+		return fmt.Errorf("no target pods found matching selector")
+	}
+
 	type result struct {
-		pod string
-		err error
+		pod     string
+		crashes int
+		err     error
 	}
 	results := make(chan result, len(targets))
 	deadline := time.Now().Add(duration)
 
 	for _, pod := range targets {
 		go func(pod corev1.Pod) {
-			results <- result{pod: pod.Name, err: d.crashLoopPod(ctx, pod, fault, deadline)}
+			crashes, err := d.crashLoopPod(ctx, pod, fault, deadline)
+			results <- result{pod: pod.Name, crashes: crashes, err: err}
 		}(pod)
 	}
 
 	var errs []error
+	totalCrashes := 0
 	for range targets {
 		r := <-results
+		totalCrashes += r.crashes
 		if r.err != nil {
 			errs = append(errs, fmt.Errorf("pod %s: %w", r.pod, r.err))
 		}
+	}
+
+	if totalCrashes == 0 && len(errs) == 0 {
+		return fmt.Errorf("crash loop fault had no effect: failed to kill any container processes. " +
+			"Ensure the target container has the 'kill' command available and processes are killable")
 	}
 
 	return errors.Join(errs...)
 }
 
 // crashLoopPod repeatedly kills PID 1 of the target container in a single pod.
-func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault CrashLoopFault, deadline time.Time) error {
+// Returns the number of successful crashes and any error encountered.
+func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault CrashLoopFault, deadline time.Time) (int, error) {
 	crashes := 0
+	consecutiveFailures := 0
+	const maxConsecutiveFailures = 5
+
 	for {
 		if ctx.Err() != nil {
-			return nil
+			return crashes, nil
 		}
 		if time.Now().After(deadline) {
-			return nil
+			return crashes, nil
 		}
 		if fault.Count > 0 && crashes >= fault.Count {
-			return nil
+			return crashes, nil
 		}
 
-		_, _, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "1"}, []byte{})
+		_, stderr, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "1"}, []byte{})
 		if err != nil {
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				errMsg := string(stderr)
+				if errMsg == "" {
+					errMsg = err.Error()
+				}
+				return crashes, fmt.Errorf("failed to kill process after %d attempts (last error: %s). "+
+					"Container may not have 'kill' command or process may be unkillable", consecutiveFailures, errMsg)
+			}
 			// container may be mid-restart — wait briefly and retry
 			select {
 			case <-ctx.Done():
-				return nil
+				return crashes, nil
 			case <-time.After(2 * time.Second):
 				continue
 			}
 		}
+
+		consecutiveFailures = 0
 		crashes++
 
 		// brief pause so Kubernetes notices the container exited
 		select {
 		case <-ctx.Done():
-			return nil
+			return crashes, nil
 		case <-time.After(1 * time.Second):
 		}
 
 		remaining := time.Until(deadline)
 		if remaining <= 0 || (fault.Count > 0 && crashes >= fault.Count) {
-			return nil
+			return crashes, nil
 		}
 
 		// wait for the container to restart before killing it again
