@@ -81,7 +81,7 @@ It offers an API for creating disruptors that target one specific type of compon
 | gRPC faults | `injectGrpcFaults` | Delay and gRPC status code injection | ✅ Stable |
 | Network drop | `injectNetworkFaults` | Drop ingress packets by port/protocol via iptables | ✅ Stable |
 | Pod termination | `terminatePods` | Terminate a random subset of target pods | ✅ Stable |
-| Crash loop | `injectCrashLoopFault` | Repeatedly kill a container's PID 1 to drive the pod into CrashLoopBackOff | ✅ Stable |
+| Crash loop | `injectCrashLoopFault` | Repeatedly kill all processes in a container to drive the pod into CrashLoopBackOff | ✅ Stable |
 | TCP reset peer | `injectHTTPResetPeerFaults` | Abruptly RST TCP connections to simulate flaky/lossy network at the transport layer | ⚠️ Experimental |
 | Network shaping | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem` | ⚠️ Experimental |
 | Network partition | `injectNetworkPartition` | Block traffic to/from specific CIDRs or IPs | ⚠️ Experimental |

@@ -52,7 +52,7 @@ Supported fault types:
 | `injectGrpcFaults` | ✅ Stable | gRPC proxy: delay and status code injection |
 | `injectNetworkFaults` | ✅ Stable | iptables: drop ingress packets by port/protocol |
 | `terminatePods` | ✅ Stable | Delete a subset of target pods |
-| `injectCrashLoopFault` | ✅ Stable | Repeatedly kill a container's PID 1 to drive it into CrashLoopBackOff |
+| `injectCrashLoopFault` | ✅ Stable | Repeatedly kill all processes in a container to drive it into CrashLoopBackOff |
 | `injectHTTPResetPeerFaults` | ⚠️ Experimental | TCP proxy: abruptly RST connections to simulate flaky/lossy network |
 | `injectNetworkShapingFaults` | ⚠️ Experimental | tc netem: delay, jitter, loss, corruption, duplication, rate limit |
 | `injectNetworkPartition` | ⚠️ Experimental | iptables: block traffic to/from specific CIDRs |
@@ -185,13 +185,13 @@ disruptor.terminatePods({ count: "50%" });
 
 ### `injectCrashLoopFault(fault, duration)`
 
-Does **not** use the ephemeral agent container. Executes `kill -9 1` directly into the target container via the Kubernetes exec API, causing the container to exit. Kubernetes restarts it with exponential backoff (10s → 20s → 40s → 80s → 160s → 300s). After ~5–6 kills the pod enters `CrashLoopBackOff`.
+Does **not** use the ephemeral agent container. Executes `kill -9 -1` directly into the target container via the Kubernetes exec API, killing all processes and causing the container to exit. This approach works even when containers use init systems (tini, dumb-init) or shell wrappers. Kubernetes restarts it with exponential backoff (10s → 20s → 40s → 80s → 160s → 300s). After ~5–6 kills the pod enters `CrashLoopBackOff`.
 
 **`CrashLoopFault` fields** (1st argument):
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `container` | `string` | — | Name of the container whose PID 1 will be killed |
+| `container` | `string` | — | Name of the container whose processes will be killed |
 | `count` | `number` | `0` | Maximum number of kills. `0` means kill repeatedly for the full duration. |
 
 ```js
