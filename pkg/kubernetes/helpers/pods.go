@@ -30,6 +30,11 @@ type PodHelper interface {
 	// WaitContainerRunning waits for a specific container within a pod to be in the Running state.
 	// Returns true if the container reached Running within the timeout, false otherwise.
 	WaitContainerRunning(ctx context.Context, podName, containerName string, timeout time.Duration) (bool, error)
+	// WaitContainerRestart waits for a container's restart count to exceed the given count.
+	// Returns the new restart count and true if it increased, or the current count and false if timeout expired.
+	WaitContainerRestart(ctx context.Context, podName, containerName string, currentCount int32, timeout time.Duration) (int32, bool, error)
+	// GetContainerRestartCount returns the current restart count for a container.
+	GetContainerRestartCount(ctx context.Context, podName, containerName string) (int32, error)
 	// Exec executes a non-interactive command described in options and returns the stdout and stderr outputs
 	Exec(ctx context.Context, pod string, container string, command []string, stdin []byte) ([]byte, []byte, error)
 	// AttachEphemeralContainer adds an ephemeral container to a running pod
@@ -176,6 +181,43 @@ func (h *podHelper) WaitContainerRunning(ctx context.Context, podName, container
 			return false, nil
 		},
 	)
+}
+
+func (h *podHelper) GetContainerRestartCount(ctx context.Context, podName, containerName string) (int32, error) {
+	pod, err := h.client.CoreV1().Pods(h.namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("getting pod %s: %w", podName, err)
+	}
+
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == containerName {
+			return cs.RestartCount, nil
+		}
+	}
+	return 0, fmt.Errorf("container %s not found in pod %s", containerName, podName)
+}
+
+func (h *podHelper) WaitContainerRestart(ctx context.Context, podName, containerName string, currentCount int32, timeout time.Duration) (int32, bool, error) {
+	var newCount int32
+	restarted, err := h.waitForCondition(
+		ctx,
+		h.namespace,
+		podName,
+		timeout,
+		func(pod *corev1.Pod) (bool, error) {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == containerName {
+					newCount = cs.RestartCount
+					return cs.RestartCount > currentCount, nil
+				}
+			}
+			return false, nil
+		},
+	)
+	if err != nil {
+		return newCount, false, err
+	}
+	return newCount, restarted, nil
 }
 
 func (h *podHelper) Exec(

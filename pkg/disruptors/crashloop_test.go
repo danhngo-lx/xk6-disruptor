@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,10 +14,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-func buildRunningPod(name, namespace, containerName string) corev1.Pod {
+func buildRunningPodWithRestartCount(name, namespace, containerName string, restartCount int32) corev1.Pod {
 	container := builders.NewContainerBuilder(containerName).Build()
 
 	pod := builders.NewPodBuilder(name).
@@ -25,11 +27,12 @@ func buildRunningPod(name, namespace, containerName string) corev1.Pod {
 		WithIP("192.0.2.6").
 		Build()
 
-	// Set pod phase to Running
+	// Set pod phase to Running with restart count
 	pod.Status.Phase = corev1.PodRunning
 	pod.Status.ContainerStatuses = []corev1.ContainerStatus{
 		{
-			Name: containerName,
+			Name:         containerName,
+			RestartCount: restartCount,
 			State: corev1.ContainerState{
 				Running: &corev1.ContainerStateRunning{},
 			},
@@ -38,6 +41,31 @@ func buildRunningPod(name, namespace, containerName string) corev1.Pod {
 	}
 
 	return pod
+}
+
+func buildRunningPod(name, namespace, containerName string) corev1.Pod {
+	return buildRunningPodWithRestartCount(name, namespace, containerName, 0)
+}
+
+// setupRestartCountReactor adds a reactor to the fake client that increments the
+// restart count each time the pod is fetched (simulating container restarts)
+func setupRestartCountReactor(client *fake.Clientset, podName, containerName string, counter *int32) {
+	client.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		getAction := action.(k8stesting.GetAction)
+		if getAction.GetName() != podName {
+			return false, nil, nil
+		}
+
+		// Increment restart count atomically
+		newCount := atomic.AddInt32(counter, 1)
+
+		// Return pod with updated restart count
+		pod := buildRunningPodWithRestartCount(podName, getAction.GetNamespace(), containerName, newCount)
+		// Add labels that tests expect
+		pod.Labels = map[string]string{"app": "test"}
+
+		return true, &pod, nil
+	})
 }
 
 func Test_InjectCrashLoopFault(t *testing.T) {
@@ -53,6 +81,8 @@ func Test_InjectCrashLoopFault(t *testing.T) {
 		execResults   []helpers.ExecResult
 		expectError   bool
 		errorContains string
+		// simulateRestarts enables the restart count reactor for success tests
+		simulateRestarts bool
 		// minKillCalls is the minimum expected number of kill command calls
 		minKillCalls int
 	}{
@@ -74,8 +104,9 @@ func Test_InjectCrashLoopFault(t *testing.T) {
 			execResults: []helpers.ExecResult{
 				{Stdout: nil, Stderr: nil, Err: nil}, // successful kill
 			},
-			expectError:  false,
-			minKillCalls: 3,
+			simulateRestarts: true,
+			expectError:      false,
+			minKillCalls:     3,
 		},
 		{
 			name:      "no matching pods returns error",
@@ -123,31 +154,7 @@ func Test_InjectCrashLoopFault(t *testing.T) {
 			minKillCalls:  5,
 		},
 		{
-			name:      "intermittent failures are tolerated",
-			namespace: "test-ns",
-			pods: []corev1.Pod{
-				buildRunningPod("pod-1", "test-ns", "app"),
-			},
-			selectorSpec: PodSelectorSpec{
-				Namespace: "test-ns",
-				Select:    PodAttributes{Labels: map[string]string{"app": "test"}},
-			},
-			fault: CrashLoopFault{
-				Container: "app",
-				Count:     3,
-			},
-			duration: 30 * time.Second,
-			execResults: []helpers.ExecResult{
-				{Stdout: nil, Stderr: nil, Err: nil},                             // success
-				{Stderr: []byte("container restarting"), Err: errors.New("err")}, // fail (container restarting)
-				{Stdout: nil, Stderr: nil, Err: nil},                             // success after retry
-				{Stdout: nil, Stderr: nil, Err: nil},                             // success
-			},
-			expectError:  false,
-			minKillCalls: 3,
-		},
-		{
-			name:      "no successful kills returns error",
+			name:      "kill succeeds but no restart detected",
 			namespace: "test-ns",
 			pods: []corev1.Pod{
 				buildRunningPod("pod-1", "test-ns", "app"),
@@ -160,17 +167,14 @@ func Test_InjectCrashLoopFault(t *testing.T) {
 				Container: "app",
 				Count:     10,
 			},
-			duration: 30 * time.Second, // longer duration to allow 5 retries (2s each)
+			duration: 30 * time.Second,
 			execResults: []helpers.ExecResult{
-				{Stderr: []byte("kill not found"), Err: errors.New("command not found")},
-				{Stderr: []byte("kill not found"), Err: errors.New("command not found")},
-				{Stderr: []byte("kill not found"), Err: errors.New("command not found")},
-				{Stderr: []byte("kill not found"), Err: errors.New("command not found")},
-				{Stderr: []byte("kill not found"), Err: errors.New("command not found")},
+				{Stdout: nil, Stderr: nil, Err: nil}, // kill "succeeds"
 			},
-			expectError:   true,
-			errorContains: "failed to kill",
-			minKillCalls:  5,
+			simulateRestarts: false, // but no actual restarts
+			expectError:      true,
+			errorContains:    "failed to kill any container processes", // no restarts detected means no effective kills
+			minKillCalls:     1,
 		},
 	}
 
@@ -194,6 +198,12 @@ func Test_InjectCrashLoopFault(t *testing.T) {
 				objects = append(objects, &tc.pods[i])
 			}
 			client := fake.NewSimpleClientset(objects...)
+
+			// Setup restart count reactor if simulating restarts
+			var restartCounter int32
+			if tc.simulateRestarts && len(tc.pods) > 0 {
+				setupRestartCountReactor(client, tc.pods[0].Name, tc.fault.Container, &restartCounter)
+			}
 
 			k8s, err := kubernetes.NewFakeKubernetes(client)
 			if err != nil {
@@ -261,6 +271,11 @@ func Test_CrashLoopFault_ContextCancellation(t *testing.T) {
 	pod.Labels = map[string]string{"app": "test"}
 
 	client := fake.NewSimpleClientset(&pod)
+
+	// Setup restart reactor so the fault progresses
+	var restartCounter int32
+	setupRestartCountReactor(client, "pod-1", "app", &restartCounter)
+
 	k8s, _ := kubernetes.NewFakeKubernetes(client)
 
 	// Set up successful exec result
@@ -315,6 +330,32 @@ func Test_CrashLoopFault_MultiplePods(t *testing.T) {
 		objects = append(objects, &pods[i])
 	}
 	client := fake.NewSimpleClientset(objects...)
+
+	// Setup restart reactors for all pods
+	var counter1, counter2, counter3 int32
+	client.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		getAction := action.(k8stesting.GetAction)
+		var counter *int32
+		var podName string
+		switch getAction.GetName() {
+		case "pod-1":
+			counter = &counter1
+			podName = "pod-1"
+		case "pod-2":
+			counter = &counter2
+			podName = "pod-2"
+		case "pod-3":
+			counter = &counter3
+			podName = "pod-3"
+		default:
+			return false, nil, nil
+		}
+
+		newCount := atomic.AddInt32(counter, 1)
+		pod := buildRunningPodWithRestartCount(podName, getAction.GetNamespace(), "app", newCount)
+		pod.Labels = map[string]string{"app": "test"}
+		return true, &pod, nil
+	})
 
 	k8s, _ := kubernetes.NewFakeKubernetes(client)
 

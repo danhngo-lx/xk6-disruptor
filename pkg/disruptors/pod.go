@@ -126,10 +126,10 @@ func (d *podDisruptor) Cleanup(ctx context.Context) error {
 	return nil
 }
 
-// InjectCrashLoopFault repeatedly kills the main process (PID 1) of the specified
-// container in each target pod, causing Kubernetes to restart it. After enough
-// restarts the pod enters CrashLoopBackOff. The fault runs for the given duration
-// or until fault.Count crashes have been triggered (whichever comes first).
+// InjectCrashLoopFault repeatedly kills all processes in the specified container
+// in each target pod (using kill -9 -1), causing Kubernetes to restart it. After
+// enough restarts the pod enters CrashLoopBackOff. The fault runs for the given
+// duration or until fault.Count crashes have been triggered (whichever comes first).
 func (d *podDisruptor) InjectCrashLoopFault(ctx context.Context, fault CrashLoopFault, duration time.Duration) error {
 	targets, err := d.selector.Targets(ctx)
 	if err != nil {
@@ -173,8 +173,8 @@ func (d *podDisruptor) InjectCrashLoopFault(ctx context.Context, fault CrashLoop
 	return errors.Join(errs...)
 }
 
-// crashLoopPod repeatedly kills PID 1 of the target container in a single pod.
-// Returns the number of successful crashes and any error encountered.
+// crashLoopPod repeatedly kills all processes in the target container in a single pod.
+// Returns the number of verified container restarts and any error encountered.
 func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault CrashLoopFault, deadline time.Time) (int, error) {
 	crashes := 0
 	consecutiveFailures := 0
@@ -191,7 +191,23 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 			return crashes, nil
 		}
 
-		_, stderr, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "1"}, []byte{})
+		// Get current restart count before killing
+		restartCountBefore, err := d.helper.GetContainerRestartCount(ctx, pod.Name, fault.Container)
+		if err != nil {
+			// Container not found or other error - wait and retry
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return crashes, fmt.Errorf("failed to get container restart count after %d attempts: %w", consecutiveFailures, err)
+			}
+			select {
+			case <-ctx.Done():
+				return crashes, nil
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+
+		_, stderr, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "-1"}, []byte{})
 		if err != nil {
 			consecutiveFailures++
 			if consecutiveFailures >= maxConsecutiveFailures {
@@ -211,22 +227,46 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 			}
 		}
 
-		consecutiveFailures = 0
-		crashes++
-
-		// brief pause so Kubernetes notices the container exited
-		select {
-		case <-ctx.Done():
+		// Wait for the container to actually restart (restart count to increase)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
 			return crashes, nil
-		case <-time.After(1 * time.Second):
+		}
+		waitTimeout := 30 * time.Second
+		if remaining < waitTimeout {
+			waitTimeout = remaining
 		}
 
-		remaining := time.Until(deadline)
+		newCount, restarted, err := d.helper.WaitContainerRestart(ctx, pod.Name, fault.Container, restartCountBefore, waitTimeout)
+		if err != nil {
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return crashes, fmt.Errorf("error waiting for container restart: %w", err)
+			}
+			continue
+		}
+
+		if restarted {
+			consecutiveFailures = 0
+			crashes++
+			_ = newCount // restart count updated
+		} else {
+			// Kill succeeded but container didn't restart
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return crashes, fmt.Errorf("kill command succeeded but container did not restart after %d attempts. "+
+					"The container runtime may be blocking signals or the container may be configured to ignore them", consecutiveFailures)
+			}
+		}
+
+		// wait for the container to be running again before killing it
+		if ctx.Err() != nil {
+			return crashes, nil
+		}
+		remaining = time.Until(deadline)
 		if remaining <= 0 || (fault.Count > 0 && crashes >= fault.Count) {
 			return crashes, nil
 		}
-
-		// wait for the container to restart before killing it again
 		_, _ = d.helper.WaitContainerRunning(ctx, pod.Name, fault.Container, remaining)
 	}
 }

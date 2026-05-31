@@ -11,10 +11,11 @@ type CrashLoopFaultInjector interface {
 }
 
 // CrashLoopFault specifies a crash loop fault to be injected into a pod's container.
-// The fault repeatedly kills the target container's main process (PID 1), causing
+// The fault kills all processes in the target container (using kill -9 -1), causing
 // Kubernetes to restart it. After enough restarts the pod enters CrashLoopBackOff.
+// This approach works even when containers use init systems like tini or dumb-init.
 type CrashLoopFault struct {
-	// Container is the name of the container whose main process will be killed.
+	// Container is the name of the container whose processes will be killed.
 	Container string `js:"container"`
 	// Count is the maximum number of times to kill the container.
 	// When 0 (default) the container is killed repeatedly for the full duration.
