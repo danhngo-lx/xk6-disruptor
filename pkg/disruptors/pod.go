@@ -191,6 +191,32 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 			return crashes, nil
 		}
 
+		// Wait for container to be running before attempting to kill it
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return crashes, nil
+		}
+		waitTimeout := 30 * time.Second
+		if remaining < waitTimeout {
+			waitTimeout = remaining
+		}
+		running, err := d.helper.WaitContainerRunning(ctx, pod.Name, fault.Container, waitTimeout)
+		if err != nil {
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return crashes, fmt.Errorf("failed waiting for container to be running after %d attempts: %w", consecutiveFailures, err)
+			}
+			continue
+		}
+		if !running {
+			// Timed out waiting for container to be running
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				return crashes, fmt.Errorf("container not running after %d attempts - container may be stuck in CrashLoopBackOff or terminated", consecutiveFailures)
+			}
+			continue
+		}
+
 		// Get current restart count before killing
 		restartCountBefore, err := d.helper.GetContainerRestartCount(ctx, pod.Name, fault.Container)
 		if err != nil {
@@ -199,12 +225,7 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 			if consecutiveFailures >= maxConsecutiveFailures {
 				return crashes, fmt.Errorf("failed to get container restart count after %d attempts: %w", consecutiveFailures, err)
 			}
-			select {
-			case <-ctx.Done():
-				return crashes, nil
-			case <-time.After(2 * time.Second):
-				continue
-			}
+			continue
 		}
 
 		_, stderr, err := d.helper.Exec(ctx, pod.Name, fault.Container, []string{"kill", "-9", "-1"}, []byte{})
@@ -218,21 +239,16 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 				return crashes, fmt.Errorf("failed to kill process after %d attempts (last error: %s). "+
 					"Container may not have 'kill' command or process may be unkillable", consecutiveFailures, errMsg)
 			}
-			// container may be mid-restart — wait briefly and retry
-			select {
-			case <-ctx.Done():
-				return crashes, nil
-			case <-time.After(2 * time.Second):
-				continue
-			}
+			// container may be mid-restart — will wait at top of loop
+			continue
 		}
 
 		// Wait for the container to actually restart (restart count to increase)
-		remaining := time.Until(deadline)
+		remaining = time.Until(deadline)
 		if remaining <= 0 {
 			return crashes, nil
 		}
-		waitTimeout := 30 * time.Second
+		waitTimeout = 30 * time.Second
 		if remaining < waitTimeout {
 			waitTimeout = remaining
 		}
@@ -258,16 +274,6 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 					"The container runtime may be blocking signals or the container may be configured to ignore them", consecutiveFailures)
 			}
 		}
-
-		// wait for the container to be running again before killing it
-		if ctx.Err() != nil {
-			return crashes, nil
-		}
-		remaining = time.Until(deadline)
-		if remaining <= 0 || (fault.Count > 0 && crashes >= fault.Count) {
-			return crashes, nil
-		}
-		_, _ = d.helper.WaitContainerRunning(ctx, pod.Name, fault.Container, remaining)
 	}
 }
 
