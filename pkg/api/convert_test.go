@@ -25,6 +25,12 @@ func Test_Conversions(t *testing.T) {
 		Map         map[string]string
 		Array       []string
 	}
+	// ReplicaLike simulates ReplicaChangeFault with pointer fields
+	type ReplicaLike struct {
+		Delta      *int32
+		Replicas   *int32
+		Percentage *int32
+	}
 
 	testCases := []struct {
 		description string
@@ -161,6 +167,64 @@ func Test_Conversions(t *testing.T) {
 			target:      &[]int64{},
 			expected:    nil,
 			expectError: true,
+		},
+		{
+			description: "pointer to int32 from int64",
+			value:       int64(42),
+			target: func() **int32 {
+				var p *int32
+				return &p
+			}(),
+			expected: func() *int32 {
+				v := int32(42)
+				return &v
+			}(),
+			expectError: false,
+		},
+		{
+			description: "pointer to int32 overflow",
+			value:       int64(3000000000), // larger than MaxInt32
+			target: func() **int32 {
+				var p *int32
+				return &p
+			}(),
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			description: "pointer to int32 from float64",
+			value:       float64(42),
+			target: func() **int32 {
+				var p *int32
+				return &p
+			}(),
+			expected: func() *int32 {
+				v := int32(42)
+				return &v
+			}(),
+			expectError: false,
+		},
+		{
+			description: "pointer to int32 from non-whole float64",
+			value:       float64(42.5),
+			target: func() **int32 {
+				var p *int32
+				return &p
+			}(),
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			description: "struct with pointer fields (like ReplicaChangeFault)",
+			value: map[string]interface{}{
+				"delta": int64(2),
+			},
+			target: &ReplicaLike{},
+			expected: func() ReplicaLike {
+				d := int32(2)
+				return ReplicaLike{Delta: &d}
+			}(),
+			expectError: false,
 		},
 		{
 			description: "map  conversion",

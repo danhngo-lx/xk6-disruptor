@@ -15,6 +15,7 @@ import (
 // struct                <-- map[string]interface{}
 // map[string]ValueType  <-- map[string]interface (1)
 // []type                <-- []interface{}
+// *T (pointer)          <-- value convertible to T (allocates new T)
 // float64               <-- float64
 // int64                 <-- int64
 // string                <-- string
@@ -41,6 +42,8 @@ func Convert(value interface{}, target interface{}) error {
 		return convertMap(value, target)
 	case reflect.Slice:
 		return convertSlice(value, target)
+	case reflect.Ptr:
+		return convertPointer(value, target)
 	case reflect.Struct:
 		if targetValue.Type().String() == "time.Time" {
 			return convertTime(value, target)
@@ -68,6 +71,54 @@ func Convert(value interface{}, target interface{}) error {
 		return fmt.Errorf("expected %s got %s", targetValue.Type(), valueType)
 	}
 	targetValue.Set(reflect.ValueOf(value).Convert(targetValue.Type()))
+	return nil
+}
+
+// convertPointer handles conversion to pointer types like *int32, *int64, etc.
+// It allocates a new value of the element type, converts the input value to that type,
+// and sets the pointer to point to the new value.
+func convertPointer(value interface{}, target interface{}) error {
+	targetValue := reflect.ValueOf(target).Elem()
+	elemType := targetValue.Type().Elem()
+
+	// Create a new value of the element type
+	newElem := reflect.New(elemType)
+
+	// Convert the value to the element type
+	valueType := reflect.TypeOf(value)
+
+	// Handle int64 -> int32 conversion (common case from JS numbers)
+	if valueType.Kind() == reflect.Int64 && elemType.Kind() == reflect.Int32 {
+		int64Val := value.(int64)
+		if int64Val > math.MaxInt32 || int64Val < math.MinInt32 {
+			return fmt.Errorf("value %d overflows int32 range", int64Val)
+		}
+		newElem.Elem().SetInt(int64Val)
+		targetValue.Set(newElem)
+		return nil
+	}
+
+	// Handle float64 -> int32 conversion (JS numbers can be floats)
+	if valueType.Kind() == reflect.Float64 && elemType.Kind() == reflect.Int32 {
+		float64Val := value.(float64)
+		int64Val := int64(float64Val)
+		if float64Val != float64(int64Val) {
+			return fmt.Errorf("value %f is not a whole number", float64Val)
+		}
+		if int64Val > math.MaxInt32 || int64Val < math.MinInt32 {
+			return fmt.Errorf("value %d overflows int32 range", int64Val)
+		}
+		newElem.Elem().SetInt(int64Val)
+		targetValue.Set(newElem)
+		return nil
+	}
+
+	// Try general conversion
+	if !valueType.ConvertibleTo(elemType) {
+		return fmt.Errorf("expected %s got %s", elemType, valueType)
+	}
+	newElem.Elem().Set(reflect.ValueOf(value).Convert(elemType))
+	targetValue.Set(newElem)
 	return nil
 }
 
