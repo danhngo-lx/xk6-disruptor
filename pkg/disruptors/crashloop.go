@@ -20,4 +20,7 @@ type CrashLoopFault struct {
 	// Count is the maximum number of times to kill the container.
 	// When 0 (default) the container is killed repeatedly for the full duration.
 	Count int `js:"count"`
+	// RestartTimeout is the maximum time to wait for a container to restart after kill.
+	// Defaults to 30 seconds if not specified or set to 0.
+	RestartTimeout time.Duration `js:"restartTimeout"`
 }

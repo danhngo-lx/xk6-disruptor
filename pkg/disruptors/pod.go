@@ -196,7 +196,10 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 		if remaining <= 0 {
 			return crashes, nil
 		}
-		waitTimeout := 30 * time.Second
+		waitTimeout := fault.RestartTimeout
+		if waitTimeout <= 0 {
+			waitTimeout = 30 * time.Second
+		}
 		if remaining < waitTimeout {
 			waitTimeout = remaining
 		}
@@ -248,7 +251,10 @@ func (d *podDisruptor) crashLoopPod(ctx context.Context, pod corev1.Pod, fault C
 		if remaining <= 0 {
 			return crashes, nil
 		}
-		waitTimeout = 30 * time.Second
+		waitTimeout = fault.RestartTimeout
+		if waitTimeout <= 0 {
+			waitTimeout = 30 * time.Second
+		}
 		if remaining < waitTimeout {
 			waitTimeout = remaining
 		}
