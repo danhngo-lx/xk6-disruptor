@@ -1,8 +1,8 @@
 > [!WARNING]
 > **⚠️ This repository is archived and no longer maintained by Grafana Labs.**
-> 
+>
 > Grafana Labs is no longer actively maintaining this project. The repository is now read-only, and no further updates, bug fixes, or feature requests will be addressed.
-> 
+>
 > **You are welcome to fork this repository** if you would like to continue development or maintain your own version.
 
 # xk6-disruptor
@@ -18,7 +18,6 @@
 </p>
 <p align="center">  
 </div>
-
 
 xk6-disruptor is an extension adds fault injection capabilities to [Grafana k6](https://github.com/grafana/k6). It implements the ideas of the Chaos Engineering discipline and enables Grafana k6 users to test their system's reliability under turbulent conditions.
 
@@ -50,20 +49,20 @@ You can check this out in the following example:
 
 ```js
 export default function () {
-    // Create a new pod disruptor with a selector 
-    // that matches pods from the "default" namespace with the label "app=my-app"
-    const disruptor = new PodDisruptor({
-        namespace: "default",
-        select: { labels: { app: "my-app" } },
-    });
+  // Create a new pod disruptor with a selector
+  // that matches pods from the "default" namespace with the label "app=my-app"
+  const disruptor = new PodDisruptor({
+    namespace: "default",
+    select: { labels: { app: "my-app" } },
+  });
 
-    // Disrupt the targets by injecting HTTP faults into them for 30 seconds
-    const fault = {
-        averageDelay: 500,
-        errorRate: 0.1,
-        errorCode: 500
-    }
-    disruptor.injectHTTPFaults(fault, "30s")
+  // Disrupt the targets by injecting HTTP faults into them for 30 seconds
+  const fault = {
+    averageDelay: 500,
+    errorRate: 0.1,
+    errorCode: 500,
+  };
+  disruptor.injectHTTPFaults(fault, "30s");
 }
 ```
 
@@ -75,37 +74,37 @@ It offers an API for creating disruptors that target one specific type of compon
 
 ### Pod / Service fault types
 
-| Fault | API method | Description | Status |
-|---|---|---|---|
-| HTTP faults | `injectHTTPFaults` | Delay, error code injection, response body/header modification | ✅ Stable |
-| gRPC faults | `injectGrpcFaults` | Delay and gRPC status code injection | ✅ Stable |
-| Network drop | `injectNetworkFaults` | Drop ingress packets by port/protocol via iptables | ✅ Stable |
-| Pod termination | `terminatePods` | Terminate a random subset of target pods | ✅ Stable |
-| Crash loop | `injectCrashLoopFault` | Repeatedly kill all processes in a container to drive the pod into CrashLoopBackOff | ✅ Stable |
-| TCP reset peer | `injectHTTPResetPeerFaults` | Abruptly RST TCP connections to simulate flaky/lossy network at the transport layer | ⚠️ Experimental |
-| Network shaping | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem` | ⚠️ Experimental |
-| Network partition | `injectNetworkPartition` | Block traffic to/from specific CIDRs or IPs | ⚠️ Experimental |
-| CPU stress | `injectCPUStress` | Consume a percentage of CPU across N cores | ⚠️ Experimental |
-| Memory pressure | `injectMemoryStress` | Allocate and hold a given amount of memory | ⚠️ Experimental |
-| DNS faults | `injectDNSFaults` | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs | ⚠️ Experimental |
-| Disk fill | `injectDiskFill` | Write a large file to exhaust ephemeral storage quota (can trigger pod eviction) | ⚠️ Experimental |
-| IO stress | `injectIOStress` | Parallel write/read workers to saturate I/O throughput ("noisy neighbour") | ⚠️ Experimental |
+| Fault             | API method                   | Description                                                                         | Status          |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------- | --------------- |
+| HTTP faults       | `injectHTTPFaults`           | Delay, error code injection, response body/header modification                      | ✅ Stable       |
+| gRPC faults       | `injectGrpcFaults`           | Delay and gRPC status code injection                                                | ✅ Stable       |
+| Network drop      | `injectNetworkFaults`        | Drop ingress packets by port/protocol via iptables                                  | ✅ Stable       |
+| Pod termination   | `terminatePods`              | Terminate a random subset of target pods                                            | ✅ Stable       |
+| Crash loop        | `injectCrashLoopFault`       | Repeatedly kill all processes in a container to drive the pod into CrashLoopBackOff | ✅ Stable       |
+| TCP reset peer    | `injectHTTPResetPeerFaults`  | Abruptly RST TCP connections to simulate flaky/lossy network at the transport layer | ⚠️ Experimental |
+| Network shaping   | `injectNetworkShapingFaults` | Packet delay, jitter, loss, corruption, duplication, rate limiting via `tc netem`   | ⚠️ Experimental |
+| Network partition | `injectNetworkPartition`     | Block traffic to/from specific CIDRs or IPs                                         | ⚠️ Experimental |
+| CPU stress        | `injectCPUStress`            | Consume a percentage of CPU across N cores                                          | ⚠️ Experimental |
+| Memory pressure   | `injectMemoryStress`         | Allocate and hold a given amount of memory                                          | ⚠️ Experimental |
+| DNS faults        | `injectDNSFaults`            | Return NXDOMAIN for a fraction of queries or spoof domains to fake IPs              | ⚠️ Experimental |
+| Disk fill         | `injectDiskFill`             | Write a large file to exhaust ephemeral storage quota (can trigger pod eviction)    | ⚠️ Experimental |
+| IO stress         | `injectIOStress`             | Parallel write/read workers to saturate I/O throughput ("noisy neighbour")          | ⚠️ Experimental |
 
 ### Node fault types (`NodeDisruptor`)
 
-| Fault | API method | Description | Status |
-|---|---|---|---|
-| Node drain | `drain` | Cordon + evict all eligible pods, then uncordon after duration | ⚠️ Experimental |
-| Node taint | `taintNode` | Add a taint to the node, remove it after duration | ⚠️ Experimental |
-| Node CPU stress | `injectCPUStress` | Run a CPU stressor at node level via a privileged pod | ⚠️ Experimental |
-| Node memory stress | `injectMemoryStress` | Run a memory stressor at node level via a privileged pod | ⚠️ Experimental |
-| Node IO stress | `injectIOStress` | Run an IO stressor at node level via a privileged pod | ⚠️ Experimental |
+| Fault                | API method                 | Description                                                         | Status          |
+| -------------------- | -------------------------- | ------------------------------------------------------------------- | --------------- |
+| Node drain           | `drain`                    | Cordon + evict all eligible pods, then uncordon after duration      | ⚠️ Experimental |
+| Node taint           | `taintNode`                | Add a taint to the node, remove it after duration                   | ⚠️ Experimental |
+| Node CPU stress      | `injectCPUStress`          | Run a CPU stressor at node level via a privileged pod               | ⚠️ Experimental |
+| Node memory stress   | `injectMemoryStress`       | Run a memory stressor at node level via a privileged pod            | ⚠️ Experimental |
+| Node IO stress       | `injectIOStress`           | Run an IO stressor at node level via a privileged pod               | ⚠️ Experimental |
 | Kubelet service kill | `injectKubeletServiceKill` | Stop the kubelet service for a duration then restart it via nsenter | ⚠️ Experimental |
 
 ### Workload fault types (`WorkloadDisruptor`)
 
-| Fault | API method | Description | Status |
-|---|---|---|---|
+| Fault          | API method      | Description                                                                                                           | Status          |
+| -------------- | --------------- | --------------------------------------------------------------------------------------------------------------------- | --------------- |
 | Replica change | `scaleReplicas` | Scale a Deployment / StatefulSet up or down (absolute, delta, or percentage), optionally auto-revert after a duration | ⚠️ Experimental |
 
 > ⚠️ **Experimental** faults are code-complete and follow the same implementation patterns as stable faults, but have not yet been validated end-to-end in a live cluster. They require the custom agent image to be built from this fork. Use with caution and report issues.
@@ -118,10 +117,7 @@ Intercepts TCP connections on the target port and sends a RST packet (`SO_LINGER
 
 ```js
 // Reset 30% of connections after a 500ms delay (mid-flight reset)
-disruptor.injectHTTPResetPeerFaults(
-  { port: 8080, resetTimeout: 500, toxicity: 0.3 },
-  "60s",
-);
+disruptor.injectHTTPResetPeerFaults({ port: 8080, resetTimeout: 500, toxicity: 0.3 }, "60s");
 ```
 
 Fields: `port` (target port), `resetTimeout` (ms to wait before RST, default `0`), `toxicity` (fraction 0–1 of connections to reset, default `1.0`). Accepts the same optional 3rd options argument as `injectHTTPFaults` (`proxyPort`, `nonTransparent`).
@@ -132,7 +128,7 @@ Applies `tc netem` rules to a pod's network interface. All parameters are option
 
 ```js
 disruptor.injectNetworkShapingFaults(
-  { delay: 200, jitter: 20, loss: 0.01 },  // 200ms ± 20ms, 1% loss
+  { delay: 200, jitter: 20, loss: 0.01 }, // 200ms ± 20ms, 1% loss
   "60s",
 );
 ```
@@ -144,10 +140,7 @@ Fields: `interface` (default `"eth0"`), `delay` (ms), `jitter` (ms), `loss`, `co
 Blocks traffic between the pod and specified CIDRs/IPs via `iptables DROP`.
 
 ```js
-disruptor.injectNetworkPartition(
-  { hosts: ["10.0.1.42", "192.168.0.0/24"], direction: "egress" },
-  "60s",
-);
+disruptor.injectNetworkPartition({ hosts: ["10.0.1.42", "192.168.0.0/24"], direction: "egress" }, "60s");
 ```
 
 Fields: `hosts` (required, array of CIDRs or IPs), `direction` (`"ingress"`, `"egress"`, or `"both"` — default `"both"`).
@@ -158,7 +151,7 @@ Consumes a target percentage of CPU across N cores using a precise duty-cycle al
 
 ```js
 disruptor.injectCPUStress(
-  { load: 80, cpus: 2 },  // 80% on 2 cores
+  { load: 80, cpus: 2 }, // 80% on 2 cores
   "60s",
 );
 ```
@@ -171,7 +164,7 @@ Allocates and holds a fixed amount of memory, touching every page to force physi
 
 ```js
 disruptor.injectMemoryStress(
-  { bytes: 256 * 1024 * 1024 },  // 256 MiB
+  { bytes: 256 * 1024 * 1024 }, // 256 MiB
   "60s",
 );
 ```
@@ -185,9 +178,9 @@ Starts an in-pod DNS proxy and redirects all UDP port 53 traffic to it. Non-faul
 ```js
 disruptor.injectDNSFaults(
   {
-    errorRate: 0.3,                         // 30% of queries return NXDOMAIN
+    errorRate: 0.3, // 30% of queries return NXDOMAIN
     spoof: { "payments.internal": "192.0.2.1" },
-    upstreamDNS: "10.96.0.10:53",          // use kube-dns, not 8.8.8.8
+    upstreamDNS: "10.96.0.10:53", // use kube-dns, not 8.8.8.8
   },
   "60s",
 );
@@ -201,10 +194,7 @@ Writes a large file inside the pod to consume ephemeral storage quota. The file 
 
 ```js
 // Fill 500 MiB of ephemeral storage
-disruptor.injectDiskFill(
-  { bytes: 500 * 1024 * 1024 },
-  "60s",
-);
+disruptor.injectDiskFill({ bytes: 500 * 1024 * 1024 }, "60s");
 ```
 
 Fields: `bytes` (required), `path` (default `"/tmp"`), `blockSize` (default 262144 = 256 KiB). Note: ephemeral-storage limits must be set in the pod spec for eviction to trigger.
@@ -215,10 +205,7 @@ Runs N parallel workers that continuously write and read back a fixed-size file 
 
 ```js
 // 4 workers × 10 MiB working set = 40 MiB per write/read cycle
-disruptor.injectIOStress(
-  { path: "/data", workers: 4, bytesPerWorker: 10 * 1024 * 1024 },
-  "60s",
-);
+disruptor.injectIOStress({ path: "/data", workers: 4, bytesPerWorker: 10 * 1024 * 1024 }, "60s");
 ```
 
 Fields: `path` (default `"/tmp"`), `workers` (default `4`), `bytesPerWorker` (default 1 MiB). Set `path` to a PVC mount to target a specific volume.
@@ -241,8 +228,8 @@ const disruptor = new NodeDisruptor({ name: "worker-node-1" });
 // Or target nodes by label selector
 const disruptor = new NodeDisruptor({
   select: { labels: { "node-role.kubernetes.io/worker": "" } },
-  agentNamespace: "kube-system",   // namespace for privileged helper pods (default: kube-system)
-  agentImage: "myregistry/xk6-disruptor-agent:v1.0",  // optional image override
+  agentNamespace: "kube-system", // namespace for privileged helper pods (default: kube-system)
+  agentImage: "myregistry/xk6-disruptor-agent:v1.0", // optional image override
 });
 ```
 
@@ -251,10 +238,7 @@ const disruptor = new NodeDisruptor({
 Cordons the node, evicts all eligible pods, waits for `duration`, then uncordons.
 
 ```js
-disruptor.drain(
-  { skipDaemonSets: true, deleteLocalData: false },
-  "120s",
-);
+disruptor.drain({ skipDaemonSets: true, deleteLocalData: false }, "120s");
 ```
 
 Fields: `skipDaemonSets` (default `false`), `deleteLocalData` (default `false`), `timeout` (per-pod eviction timeout, default `300s`).
@@ -264,10 +248,7 @@ Fields: `skipDaemonSets` (default `false`), `deleteLocalData` (default `false`),
 Adds a taint to the node, waits for `duration`, then removes it.
 
 ```js
-disruptor.taintNode(
-  { key: "chaos", value: "true", effect: "NoSchedule" },
-  "60s",
-);
+disruptor.taintNode({ key: "chaos", value: "true", effect: "NoSchedule" }, "60s");
 ```
 
 Fields: `key` (required), `value`, `effect` (`"NoSchedule"` | `"PreferNoSchedule"` | `"NoExecute"`, default `"NoSchedule"`).
@@ -293,10 +274,7 @@ disruptor.injectMemoryStress({ bytes: 2 * 1024 * 1024 * 1024 }, "60s"); // 2 GiB
 Runs the agent as a privileged pod on the node with sustained I/O workers.
 
 ```js
-disruptor.injectIOStress(
-  { path: "/var/lib/kubelet", workers: 4, bytesPerWorker: 50 * 1024 * 1024 },
-  "60s",
-);
+disruptor.injectIOStress({ path: "/var/lib/kubelet", workers: 4, bytesPerWorker: 50 * 1024 * 1024 }, "60s");
 ```
 
 ### Kubelet Service Kill
@@ -359,12 +337,12 @@ const disruptor = new WorkloadDisruptor({
 
 Constructor argument fields:
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `kind` | `string` | Yes | Workload kind: `"Deployment"` or `"StatefulSet"`. |
-| `namespace` | `string` | No | Namespace to scope the lookup. Defaults to `"default"`. |
-| `select.name` | `string` | One-of | Target a single workload by exact name. |
-| `select.labels` | `object` | One-of | Match-all label map. Targets every workload of `kind` in `namespace` matching every label. |
+| Field           | Type     | Required | Description                                                                                |
+| --------------- | -------- | -------- | ------------------------------------------------------------------------------------------ |
+| `kind`          | `string` | Yes      | Workload kind: `"Deployment"` or `"StatefulSet"`.                                          |
+| `namespace`     | `string` | No       | Namespace to scope the lookup. Defaults to `"default"`.                                    |
+| `select.name`   | `string` | One-of   | Target a single workload by exact name.                                                    |
+| `select.labels` | `object` | One-of   | Match-all label map. Targets every workload of `kind` in `namespace` matching every label. |
 
 Exactly one of `select.name` or `select.labels` must be set.
 
@@ -374,12 +352,12 @@ Applies a replica change to every selected workload concurrently. The original r
 
 Fault fields (exactly **one** of `replicas`, `delta`, `percentage` must be set):
 
-| Field | Type | Description |
-|---|---|---|
-| `replicas` | `int32` | Absolute target replica count. `0` scales the workload to zero. |
-| `delta` | `int32` | Relative change. Negative values reduce; the result is clamped to `0` if it would go below zero. |
-| `percentage` | `int32` | Percent of current replicas (floor rounding; `50` halves, `0` scales to zero, `200` doubles). Must be `>= 0`. |
-| `autoRevert` | `bool` | Defaults to `false`. When `true`, the method blocks for `duration`, then restores each workload to its original replica count before returning. When `false`, the change is applied and the call returns immediately; replicas remain changed until `cleanup()` is called. |
+| Field        | Type    | Description                                                                                                                                                                                                                                                                |
+| ------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replicas`   | `int32` | Absolute target replica count. `0` scales the workload to zero.                                                                                                                                                                                                            |
+| `delta`      | `int32` | Relative change. Negative values reduce; the result is clamped to `0` if it would go below zero.                                                                                                                                                                           |
+| `percentage` | `int32` | Percent of current replicas (floor rounding; `50` halves, `0` scales to zero, `200` doubles). Must be `>= 0`.                                                                                                                                                              |
+| `autoRevert` | `bool`  | Defaults to `false`. When `true`, the method blocks for `duration`, then restores each workload to its original replica count before returning. When `false`, the change is applied and the call returns immediately; replicas remain changed until `cleanup()` is called. |
 
 `duration` is required only when `autoRevert: true`.
 
@@ -423,10 +401,10 @@ The service account running k6 needs permission to read **and update** the workl
 
 xk6-disruptor injects an ephemeral container (`xk6-disruptor-agent`) into target pods to apply faults. The container image used can be configured at three levels:
 
-| Level | How |
-|---|---|
-| Per script | `agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:latest'` in disruptor options |
-| Per run | `XK6_DISRUPTOR_AGENT_IMAGE=ghcr.io/myorg/xk6-disruptor-agent:latest k6 run script.js` |
+| Level      | How                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| Per script | `agentImage: 'ghcr.io/myorg/xk6-disruptor-agent:latest'` in disruptor options                 |
+| Per run    | `XK6_DISRUPTOR_AGENT_IMAGE=ghcr.io/myorg/xk6-disruptor-agent:latest k6 run script.js`         |
 | Build time | `-ldflags "-X .../version.agentImageRepo=ghcr.io/myorg/xk6-disruptor-agent"` when building k6 |
 
 Build the agent image locally from the repo root:
@@ -457,20 +435,20 @@ xk6-disruptor emits k6 metrics for every fault injection so you can correlate di
 
 Every metric carries the same four base tags:
 
-| Tag | Values |
-|---|---|
-| `fault_type` | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill`, `replica_change` |
-| `disruptor` | `pod`, `service`, `node`, `workload` |
-| `target_namespace` | Kubernetes namespace the disruptor targets (may be empty for cluster-scoped node faults) |
-| `target_name` | Service name, node name, or serialized pod selector (e.g. `app=frontend,!canary=true`) |
+| Tag                | Values                                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fault_type`       | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill`, `replica_change` |
+| `disruptor`        | `pod`, `service`, `node`, `workload`                                                                                                                                                                                                |
+| `target_namespace` | Kubernetes namespace the disruptor targets (may be empty for cluster-scoped node faults)                                                                                                                                            |
+| `target_name`      | Service name, node name, or serialized pod selector (e.g. `app=frontend,!canary=true`)                                                                                                                                              |
 
-| Metric | Type | When emitted |
-|---|---|---|
-| `xk6_disruptor_fault_active` | Gauge | `1` immediately before the underlying call runs; back to `0` when it returns (success **or** error). |
-| `xk6_disruptor_faults_injected_total` | Counter | `+1` per fault-injection call at start. |
-| `xk6_disruptor_faults_failed_total` | Counter | `+1` when an injection call returns an error. Adds `error_class` tag (`timeout`, `canceled`, `exec_failed`, `inject_failed`, `other`). |
-| `xk6_disruptor_fault_duration_seconds` | Trend | Wall-clock duration of each call. Adds `outcome` tag (`success` / `error`). |
-| `xk6_disruptor_targets_selected` | Gauge | Number of targets matched by the selector. Emitted when `disruptor.targets()` is called from JS. |
+| Metric                                 | Type    | When emitted                                                                                                                           |
+| -------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `xk6_disruptor_fault_active`           | Gauge   | `1` immediately before the underlying call runs; back to `0` when it returns (success **or** error).                                   |
+| `xk6_disruptor_faults_injected_total`  | Counter | `+1` per fault-injection call at start.                                                                                                |
+| `xk6_disruptor_faults_failed_total`    | Counter | `+1` when an injection call returns an error. Adds `error_class` tag (`timeout`, `canceled`, `exec_failed`, `inject_failed`, `other`). |
+| `xk6_disruptor_fault_duration_seconds` | Trend   | Wall-clock duration of each call. Adds `outcome` tag (`success` / `error`).                                                            |
+| `xk6_disruptor_targets_selected`       | Gauge   | Number of targets matched by the selector. Emitted when `disruptor.targets()` is called from JS.                                       |
 
 ### Grafana annotations
 
@@ -512,6 +490,3 @@ If you encounter any bugs or unexpected behavior, please search the [currently o
 The [Roadmap](/ROADMAP.md) presents the project's goals for the coming months regarding new functionalities and enhancements.
 
 If you are interested in contributing with the development of this project, check the [contributing guide](/docs/01-development/01-contributing.md)
-
-
-

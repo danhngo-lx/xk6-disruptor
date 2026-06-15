@@ -14,8 +14,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func buildRunningPodWithRestartCount(name, namespace, containerName string, restartCount int32) corev1.Pod {
