@@ -10,6 +10,7 @@ import (
 	"github.com/danhngo-lx/xk6-disruptor/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -134,6 +135,7 @@ func Test_PodSelectorTargets(t *testing.T) {
 				builders.NewPodBuilder("pod-1").
 					WithNamespace("test-ns").
 					WithLabel("app", "test").
+					WithIP("1.2.3.4").
 					Build(),
 			},
 			spec: PodSelectorSpec{
@@ -156,6 +158,75 @@ func Test_PodSelectorTargets(t *testing.T) {
 				}},
 			},
 			expected:    nil,
+			expectError: true,
+		},
+		{
+			title:     "skips pods without a PodIP",
+			namespace: "test-ns",
+			pods: []corev1.Pod{
+				builders.NewPodBuilder("pod-pending").
+					WithNamespace("test-ns").
+					WithLabel("app", "test").
+					Build(),
+				builders.NewPodBuilder("pod-ready").
+					WithNamespace("test-ns").
+					WithLabel("app", "test").
+					WithIP("1.2.3.4").
+					Build(),
+			},
+			spec: PodSelectorSpec{
+				Namespace: "test-ns",
+				Select: PodAttributes{Labels: map[string]string{
+					"app": "test",
+				}},
+			},
+			expectError: false,
+			expected:    []string{"pod-ready"},
+		},
+		{
+			title:     "skips terminating pods",
+			namespace: "test-ns",
+			pods: []corev1.Pod{
+				func() corev1.Pod {
+					p := builders.NewPodBuilder("pod-terminating").
+						WithNamespace("test-ns").
+						WithLabel("app", "test").
+						WithIP("1.2.3.4").
+						Build()
+					now := metav1.Now()
+					p.DeletionTimestamp = &now
+					return p
+				}(),
+				builders.NewPodBuilder("pod-ready").
+					WithNamespace("test-ns").
+					WithLabel("app", "test").
+					WithIP("5.6.7.8").
+					Build(),
+			},
+			spec: PodSelectorSpec{
+				Namespace: "test-ns",
+				Select: PodAttributes{Labels: map[string]string{
+					"app": "test",
+				}},
+			},
+			expectError: false,
+			expected:    []string{"pod-ready"},
+		},
+		{
+			title:     "errors when only candidate pods are unready",
+			namespace: "test-ns",
+			pods: []corev1.Pod{
+				builders.NewPodBuilder("pod-pending").
+					WithNamespace("test-ns").
+					WithLabel("app", "test").
+					Build(),
+			},
+			spec: PodSelectorSpec{
+				Namespace: "test-ns",
+				Select: PodAttributes{Labels: map[string]string{
+					"app": "test",
+				}},
+			},
 			expectError: true,
 		},
 	}
@@ -224,6 +295,7 @@ func Test_ServicePodSelectorTargets(t *testing.T) {
 				builders.NewPodBuilder("pod-1").
 					WithNamespace("test-ns").
 					WithLabel("app", "test").
+					WithIP("1.2.3.4").
 					Build(),
 			},
 			expectError: false,
@@ -242,10 +314,12 @@ func Test_ServicePodSelectorTargets(t *testing.T) {
 				builders.NewPodBuilder("pod-1").
 					WithNamespace("test-ns").
 					WithLabel("app", "test").
+					WithIP("1.2.3.4").
 					Build(),
 				builders.NewPodBuilder("pod-2").
 					WithNamespace("test-ns").
 					WithLabel("app", "test").
+					WithIP("5.6.7.8").
 					Build(),
 			},
 			expectError: false,

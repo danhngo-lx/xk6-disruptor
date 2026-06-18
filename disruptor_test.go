@@ -82,6 +82,7 @@ func Test_PodDisruptor(t *testing.T) {
 	pod := builders.NewPodBuilder("pod-with-app-label").
 		WithDefaultNamespace().
 		WithLabel("app", "test").
+		WithIP("1.2.3.4").
 		Build()
 	client := fake.NewSimpleClientset(&pod)
 	k8s, _ := kubernetes.NewFakeKubernetes(client)
@@ -117,6 +118,7 @@ func Test_ServiceDisruptor(t *testing.T) {
 	pod := builders.NewPodBuilder("app-pod").
 		WithDefaultNamespace().
 		WithLabels(labels).
+		WithIP("1.2.3.4").
 		Build()
 	svc := builders.NewServiceBuilder("app-service").
 		WithNamespace("default").

@@ -53,11 +53,33 @@ func (s *PodSelector) Targets(ctx context.Context) ([]corev1.Pod, error) {
 		return nil, err
 	}
 
+	targets = filterInjectable(targets)
+
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("finding pods matching '%s': %w", s.spec, ErrSelectorNoPods)
 	}
 
 	return targets, nil
+}
+
+// filterInjectable removes pods that cannot have a fault injected into them: pods that are
+// terminating (have a DeletionTimestamp), and pods that do not yet have a PodIP assigned
+// (Pending / ContainerCreating). Without this filter, a rolling restart of the target
+// Deployment — or a concurrent HPA scale-up triggered by the restart's brief load blip —
+// can surface a leftover terminating pod or a still-Pending new pod in the listing, which
+// then fails fault injection downstream with "pod ... does not have an IP address".
+func filterInjectable(pods []corev1.Pod) []corev1.Pod {
+	out := pods[:0]
+	for _, p := range pods {
+		if p.DeletionTimestamp != nil {
+			continue
+		}
+		if p.Status.PodIP == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // NamespaceOrDefault returns the configured namespace for this selector, and the name of the default namespace if it
@@ -132,6 +154,8 @@ func (s *ServicePodSelector) Targets(ctx context.Context) ([]corev1.Pod, error) 
 	if err != nil {
 		return nil, err
 	}
+
+	targets = filterInjectable(targets)
 
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("finding pods matching%s/%s: %w", s.service, s.namespace, ErrServiceNoTargets)
