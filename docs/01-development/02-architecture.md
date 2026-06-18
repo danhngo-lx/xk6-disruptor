@@ -168,11 +168,11 @@ Deletes a subset of the disruptor's target pods. Kubernetes will restart them ac
 | Field     | Type               | Default | Description                                                           |
 | --------- | ------------------ | ------- | --------------------------------------------------------------------- |
 | `count`   | `number \| string` | —       | Number of pods to terminate, or a percentage string (e.g. `"50%"`).   |
-| `timeout` | `number` (ms)      | `10000` | How long to wait for each pod to terminate before returning an error. |
+| `timeout` | `duration`         | `"10s"` | How long to wait for each pod to terminate before returning an error. |
 
 ```js
 // Terminate 1 pod and wait up to 30s for it to stop
-disruptor.terminatePods({ count: 1, timeout: 30000 });
+disruptor.terminatePods({ count: 1, timeout: "30s" });
 
 // Terminate 50% of target pods
 disruptor.terminatePods({ count: "50%" });
@@ -566,7 +566,7 @@ Cordons the node (marks it unschedulable), evicts all eligible pods, waits for `
 | ----------------- | ------------- | -------- | ----------------------------------------------------------- |
 | `skipDaemonSets`  | `boolean`     | `false`  | Skip DaemonSet-owned pods during eviction                   |
 | `deleteLocalData` | `boolean`     | `false`  | Evict pods with local storage (emptyDir / hostPath volumes) |
-| `timeout`         | `number` (ms) | `300000` | Per-pod eviction timeout                                    |
+| `timeout`         | `duration`    | `"5m"`   | Per-pod eviction timeout (Go duration string, e.g. `"5m"`)  |
 
 ```js
 disruptor.drain({ skipDaemonSets: true }, "120s");
