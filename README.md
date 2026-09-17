@@ -70,7 +70,7 @@ export default function () {
 
 The project, at this time, is intended to test systems running in Kubernetes. Other platforms are not supported at this time.
 
-It offers an API for creating disruptors that target one specific type of component (e.g., Pods, Nodes) and is capable of injecting different kinds of faults. Disruptors exist for Pods, Services, Nodes, and Workloads (Deployments / StatefulSets).
+It offers an API for creating disruptors that target one specific type of component (e.g., Pods, Nodes) and is capable of injecting different kinds of faults. Disruptors exist for Pods, Services, Nodes, Workloads (Deployments / StatefulSets), admission webhook configurations, node-pool capacity, and Istio resources (VirtualService, DestinationRule, PeerAuthentication, AuthorizationPolicy).
 
 ### Pod / Service fault types
 
@@ -210,6 +210,33 @@ disruptor.injectIOStress({ path: "/data", workers: 4, bytesPerWorker: 10 * 1024 
 
 Fields: `path` (default `"/tmp"`), `workers` (default `4`), `bytesPerWorker` (default 1 MiB). Set `path` to a PVC mount to target a specific volume.
 
+> **Approximating a "PVC full" fault:** point `injectDiskFill`'s `path` at a PVC mount and set `bytes` to (or beyond) the volume's capacity to trigger ENOSPC write errors in the application. This does **not** simulate a stuck attach/detach (a CSI/cloud-control-plane failure mode) — that is out of scope for this agent.
+
+### Datastore Faults (MongoDB / PostgreSQL / Redis / Cosmos DB)
+
+There is no dedicated database-protocol fault type — instead, target the datastore (or the application's connection to it) at the network layer with the existing primitives. This works for both self-hosted datastore pods and managed/external services (e.g. Cosmos DB, managed Postgres/Redis) that you cannot run a pod inside.
+
+```js
+// Drop all traffic to a self-hosted MongoDB pod's port
+const db = new PodDisruptor({ namespace: "data", select: { labels: { app: "mongo" } } });
+db.injectNetworkFaults({ port: 27017, protocol: "tcp" }, "60s");
+
+// Add latency + 1% packet loss to a self-hosted Postgres/Redis pod (degraded storage network)
+db.injectNetworkShapingFaults({ delay: 150, jitter: 30, loss: 0.01 }, "60s");
+
+// Wire-level corruption: bit-flip a fraction of packets (driver sees reset/checksum failures)
+db.injectNetworkShapingFaults({ corrupt: 0.05 }, "60s");
+
+// Block egress from an application pod to a managed/external endpoint (e.g. Cosmos DB) by IP/CIDR
+const app = new PodDisruptor({ namespace: "app", select: { labels: { app: "my-app" } } });
+app.injectNetworkPartition({ hosts: ["20.0.0.0/16"], direction: "egress" }, "60s");
+
+// Or break/spoof DNS resolution of the managed endpoint's FQDN
+app.injectDNSFaults({ errorRate: 1.0, spoof: { "my-cosmos-account.documents.azure.com": "203.0.113.1" } }, "60s");
+```
+
+True in-database data corruption (writing bad values into existing rows/documents) is out of scope for this agent — it requires DB credentials and write access, not network-namespace access. Do that from k6 `setup()`/`teardown()` using the real DB driver against scratch data instead.
+
 ## NodeDisruptor
 
 `NodeDisruptor` targets Kubernetes nodes rather than pods. It supports two categories of operation:
@@ -231,6 +258,12 @@ const disruptor = new NodeDisruptor({
   agentNamespace: "kube-system", // namespace for privileged helper pods (default: kube-system)
   agentImage: "myregistry/xk6-disruptor-agent:v1.0", // optional image override
 });
+
+// Or target every node in an availability zone (approximates an "AZ down" fault —
+// removes compute only; does not affect zonal storage, load balancers, or the
+// cloud control plane). Mutually exclusive with `name` and `select`.
+const disruptor = new NodeDisruptor({ zone: "us-east-1a" });
+disruptor.drain({ skipDaemonSets: true }, "120s");
 ```
 
 ### Node Drain
@@ -397,6 +430,148 @@ The service account running k6 needs permission to read **and update** the workl
 - **`autoRevert: false`:** when `autoRevert` is false, replicas remain at the changed value until `cleanup()` is called. Always pair the disruptor with a `teardown()` that calls `cleanup()` to avoid leaking scale state.
 - **Single workload kind per disruptor:** one `WorkloadDisruptor` instance targets a single `kind` (Deployment **or** StatefulSet). Create two disruptors if you need both.
 
+## WebhookDisruptor
+
+`WebhookDisruptor` targets a single `MutatingWebhookConfiguration` or `ValidatingWebhookConfiguration` and patches every webhook entry in it directly (`failurePolicy`, `timeoutSeconds`, `caBundle`) for the fault duration, then restores the original configuration. It is a pure Kubernetes API disruptor — no agent image or privileged pod is used.
+
+To simulate a **slow/unresponsive** webhook instead (rather than a misconfigured one), target the webhook's own backing pods with an existing `PodDisruptor` — e.g. `injectNetworkFaults` or `injectCPUStress` against the webhook Deployment's pods.
+
+```js
+import { WebhookDisruptor } from "k6/x/disruptor";
+
+const disruptor = new WebhookDisruptor({ kind: "Mutating", name: "my-webhook-config" });
+
+// Flip failurePolicy to Fail and shrink the timeout, so a slow/erroring webhook
+// blocks admission instead of being ignored
+disruptor.injectWebhookConfigFault({ failurePolicy: "Fail", timeoutSeconds: 2 }, "60s");
+
+// Or invalidate the CA bundle so the API server fails TLS verification when calling the webhook
+disruptor.injectWebhookConfigFault({ invalidateCABundle: true }, "60s");
+```
+
+Constructor fields: `kind` (required, `"Mutating"` or `"Validating"`), `name` (required, the webhook configuration's `metadata.name`).
+
+Fault fields (at least one required): `failurePolicy` (`"Ignore"` or `"Fail"`), `timeoutSeconds` (1-30), `invalidateCABundle` (boolean).
+
+### RBAC requirements for WebhookDisruptor
+
+```yaml
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+  verbs: ["get", "update"]
+```
+
+## NodePoolDisruptor
+
+`NodePoolDisruptor` creates a throwaway, low-priority filler `Deployment` sized to consume a node pool's allocatable CPU/memory, forcing genuine `Pending` pods and cluster-autoscaler pressure. This complements `NodeDisruptor`'s `injectCPUStress`/`injectMemoryStress`/`injectIOStress` (which simulate "noisy neighbour" resource contention on nodes that already have capacity) and `taintNode` (which blocks new scheduling outright) — use `NodePoolDisruptor` when you specifically want to exhaust a pool's *available* capacity.
+
+```js
+import { NodePoolDisruptor } from "k6/x/disruptor";
+
+const disruptor = new NodePoolDisruptor({ namespace: "chaos" });
+
+disruptor.injectFillerWorkload(
+  {
+    replicas: 20,
+    cpuPerReplica: "500m",
+    memoryPerReplica: "512Mi",
+    nodeSelector: { agentpool: "myPool" }, // constrain filler pods to one node pool
+  },
+  "5m",
+);
+
+// Always call cleanup() (safe even after the duration already deleted the filler)
+disruptor.cleanup();
+```
+
+Constructor fields: `namespace` (default `"default"`).
+
+Fault fields: `replicas` (required, > 0), `cpuPerReplica` and/or `memoryPerReplica` (Kubernetes quantity strings, e.g. `"500m"`, `"512Mi"` — at least one required), `nodeSelector` (optional, constrains filler pods to a node pool), `priorityClassName` (optional).
+
+### RBAC requirements for NodePoolDisruptor
+
+```yaml
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "create", "delete"]
+```
+
+## Istio Disruptors
+
+Four disruptors inject faults directly into Istio's own custom resources, targeting a single named resource via a generic Kubernetes dynamic client (no typed Istio clientset dependency). Every fault follows the same snapshot → patch → wait → restore lifecycle as `NodeDisruptor.drain`/`taintNode`.
+
+> These are distinct from the `injectHTTPFaults`/`injectNetworkShapingFaults` faults on `PodDisruptor`, which redirect traffic through the disruptor's own in-pod proxy via iptables and work regardless of whether Istio is present. The Istio disruptors below instead mutate Istio's control-plane configuration, so they only make sense in an Istio-enabled cluster and specifically exercise Istio's own fault-handling paths (retries, circuit breakers, mTLS, authz). See [Service mesh compatibility](#service-mesh-compatibility) for the iptables-conflict caveat that applies to `PodDisruptor` instead.
+
+### VirtualServiceDisruptor
+
+```js
+import { VirtualServiceDisruptor } from "k6/x/disruptor";
+
+const disruptor = new VirtualServiceDisruptor({ namespace: "default", name: "my-service" });
+
+// Native Istio HTTP fault injection: delay and/or abort
+disruptor.injectFaultInjection({ delayMillis: 2000, delayPercent: 50, abortHTTPStatus: 503, abortPercent: 10 }, "60s");
+
+// Misroute traffic to a nonexistent/bad destination, simulating a route-config regression
+disruptor.injectMisroute({ host: "nonexistent-service", subset: "canary" }, "60s");
+```
+
+Constructor fields: `namespace` (default `"default"`), `name` (required).
+
+`injectFaultInjection` fault fields: `httpRouteIndex` (default `0`, which `spec.http[]` entry to patch), `delayMillis`, `delayPercent` (default 100), `abortHTTPStatus`, `abortPercent` (default 100) — at least one of `delayMillis`/`abortHTTPStatus` required.
+
+`injectMisroute` fault fields: `httpRouteIndex`, `routeIndex` (default `0` for both), `host` (required), `subset` (optional).
+
+### DestinationRuleDisruptor
+
+```js
+import { DestinationRuleDisruptor } from "k6/x/disruptor";
+
+const disruptor = new DestinationRuleDisruptor({ namespace: "default", name: "my-service" });
+
+// Mismatch the peer's expected mTLS mode to cause connection failures
+disruptor.injectTLSFault({ mode: "DISABLE" }, "60s");
+```
+
+Fault fields: `mode` (required, e.g. `"DISABLE"`, `"SIMPLE"`, `"MUTUAL"`, `"ISTIO_MUTUAL"`).
+
+### PeerAuthenticationDisruptor
+
+```js
+import { PeerAuthenticationDisruptor } from "k6/x/disruptor";
+
+const disruptor = new PeerAuthenticationDisruptor({ namespace: "default", name: "default" });
+
+// Force STRICT mTLS, breaking callers that expect plaintext/permissive
+disruptor.injectMTLSFault({ mode: "STRICT" }, "60s");
+```
+
+Fault fields: `mode` (required, e.g. `"STRICT"`, `"PERMISSIVE"`, `"DISABLE"`).
+
+### AuthorizationPolicyDisruptor
+
+```js
+import { AuthorizationPolicyDisruptor } from "k6/x/disruptor";
+
+const disruptor = new AuthorizationPolicyDisruptor({ namespace: "default", name: "my-policy" });
+
+// Force a deny-all rule, simulating an authz misconfiguration (403 storm)
+disruptor.injectDenyFault({ denyAll: true }, "60s");
+```
+
+Fault fields: `denyAll` (required, must be `true`).
+
+### RBAC requirements for Istio Disruptors
+
+```yaml
+- apiGroups: ["networking.istio.io"]
+  resources: ["virtualservices", "destinationrules"]
+  verbs: ["get", "update"]
+- apiGroups: ["security.istio.io"]
+  resources: ["peerauthentications", "authorizationpolicies"]
+  verbs: ["get", "update"]
+```
+
 ## Agent image configuration
 
 xk6-disruptor injects an ephemeral container (`xk6-disruptor-agent`) into target pods to apply faults. The container image used can be configured at three levels:
@@ -437,8 +612,8 @@ Every metric carries the same four base tags:
 
 | Tag                | Values                                                                                                                                                                                                                              |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fault_type`       | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill`, `replica_change` |
-| `disruptor`        | `pod`, `service`, `node`, `workload`                                                                                                                                                                                                |
+| `fault_type`       | `http`, `http_reset_peer`, `grpc`, `terminate`, `network`, `network_shaping`, `network_partition`, `cpu_stress`, `memory_stress`, `io_stress`, `dns`, `crash_loop`, `disk_fill`, `drain`, `taint`, `kubelet_kill`, `replica_change`, `webhook_config`, `filler_workload`, `istio_vs_fault_injection`, `istio_vs_misroute`, `istio_dr_tls`, `istio_pa_mtls`, `istio_authz_deny` |
+| `disruptor`        | `pod`, `service`, `node`, `workload`, `webhook`, `nodepool`, `virtualservice`, `destinationrule`, `peerauthentication`, `authorizationpolicy`                                                                                                                                                                                |
 | `target_namespace` | Kubernetes namespace the disruptor targets (may be empty for cluster-scoped node faults)                                                                                                                                            |
 | `target_name`      | Service name, node name, or serialized pod selector (e.g. `app=frontend,!canary=true`)                                                                                                                                              |
 

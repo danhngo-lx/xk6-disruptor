@@ -37,6 +37,14 @@ type NodeAttributes struct {
 	Labels map[string]string
 }
 
+// ZoneLabelKey is the well-known Kubernetes node label used to identify the
+// availability zone a node belongs to. It is used to approximate an
+// "availability zone down" fault by targeting all nodes labeled with a given
+// zone (see the `zone` field on the NodeDisruptor constructor). This only
+// removes compute capacity in the zone — it does not affect zonal storage,
+// load balancers, or the cloud control plane.
+const ZoneLabelKey = "topology.kubernetes.io/zone"
+
 // NodeDisruptorOptions defines options that control NodeDisruptor behaviour
 type NodeDisruptorOptions struct {
 	// AgentImage overrides the container image used for the privileged helper pod.

@@ -11,9 +11,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/grafana/sobek"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/disruptors"
 	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes"
+	"github.com/grafana/sobek"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
 )
@@ -683,9 +683,9 @@ func buildJsServiceDisruptor(
 // single object (the preferred style) or keep using the legacy two-argument form.
 type podDisruptorArg struct {
 	// PodSelectorSpec fields
-	Namespace string                    `js:"namespace"`
-	Select    disruptors.PodAttributes  `js:"select"`
-	Exclude   disruptors.PodAttributes  `js:"exclude"`
+	Namespace string                   `js:"namespace"`
+	Select    disruptors.PodAttributes `js:"select"`
+	Exclude   disruptors.PodAttributes `js:"exclude"`
 	// PodDisruptorOptions fields
 	InjectTimeout time.Duration `js:"injectTimeout"`
 	AgentImage    string        `js:"agentImage"`
@@ -1168,11 +1168,15 @@ func buildJsNodeDisruptor(
 
 // nodeDisruptorArg is the combined struct used to parse the NodeDisruptor constructor argument
 type nodeDisruptorArg struct {
-	Name           string                    `js:"name"`
-	Select         disruptors.NodeAttributes `js:"select"`
-	AgentImage     string                    `js:"agentImage"`
-	AgentNamespace string                    `js:"agentNamespace"`
-	InjectTimeout  time.Duration             `js:"injectTimeout"`
+	Name   string                    `js:"name"`
+	Select disruptors.NodeAttributes `js:"select"`
+	// Zone targets every node labeled with topology.kubernetes.io/zone=<Zone>.
+	// Mutually exclusive with Name and Select — a convenience for approximating
+	// an availability-zone outage (compute only; does not affect zonal storage/LB).
+	Zone           string        `js:"zone"`
+	AgentImage     string        `js:"agentImage"`
+	AgentNamespace string        `js:"agentNamespace"`
+	InjectTimeout  time.Duration `js:"injectTimeout"`
 }
 
 // NewNodeDisruptor creates an instance of a NodeDisruptor and returns it as a goja object
@@ -1199,13 +1203,25 @@ func NewNodeDisruptor(
 		InjectTimeout:  arg.InjectTimeout,
 	}
 
-	disruptor, err := disruptors.NewNodeDisruptor(ctx, k8s, arg.Name, arg.Select.Labels, options)
+	labelSelector := arg.Select.Labels
+	if arg.Zone != "" {
+		if arg.Name != "" || len(labelSelector) > 0 {
+			return nil, fmt.Errorf("zone cannot be combined with name or select.labels")
+		}
+		labelSelector = map[string]string{disruptors.ZoneLabelKey: arg.Zone}
+	}
+
+	disruptor, err := disruptors.NewNodeDisruptor(ctx, k8s, arg.Name, labelSelector, options)
 	if err != nil {
 		return nil, fmt.Errorf("error creating NodeDisruptor: %w", err)
 	}
 
 	targetName := arg.Name
-	if targetName == "" {
+	switch {
+	case targetName != "":
+	case arg.Zone != "":
+		targetName = "zone=" + arg.Zone
+	default:
 		targetName = FormatPodSelector(arg.Select.Labels, nil)
 	}
 	tr := newTracker(vu, m, TargetInfo{
@@ -1217,6 +1233,657 @@ func NewNodeDisruptor(
 	obj, err := buildJsNodeDisruptor(ctx, rt, disruptor, tr)
 	if err != nil {
 		return nil, fmt.Errorf("error creating NodeDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── WebhookDisruptor JS API ──────────────────────────────────────────────────
+
+// jsWebhookConfigFaultInjector wraps the WebhookDisruptor InjectWebhookConfigFault method for JS
+type jsWebhookConfigFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.WebhookConfigFaultInjector
+}
+
+// InjectWebhookConfigFault signature: injectWebhookConfigFault(fault, duration)
+func (p *jsWebhookConfigFaultInjector) InjectWebhookConfigFault(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("WebhookConfigFault and duration are required"))
+	}
+
+	fault := disruptors.WebhookConfigFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "webhook_config", func() error {
+		return p.WebhookConfigFaultInjector.InjectWebhookConfigFault(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsWebhookDisruptor combines the Disruptor base methods and the webhook-config injector
+type jsWebhookDisruptor struct {
+	jsDisruptor
+	jsWebhookConfigFaultInjector
+}
+
+// buildJsWebhookDisruptor builds a goja object that implements the WebhookDisruptor API
+func buildJsWebhookDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.WebhookDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsWebhookDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsWebhookConfigFaultInjector: jsWebhookConfigFaultInjector{
+			ctx:                        ctx,
+			rt:                         rt,
+			tracker:                    tr,
+			WebhookConfigFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// webhookDisruptorArg is the combined struct used to parse the WebhookDisruptor constructor argument
+type webhookDisruptorArg struct {
+	Kind string `js:"kind"` // "Mutating" or "Validating"
+	Name string `js:"name"`
+}
+
+// NewWebhookDisruptor creates an instance of a WebhookDisruptor and returns it as a goja object.
+func NewWebhookDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("WebhookDisruptor constructor expects a non-null argument")
+	}
+
+	arg := webhookDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid WebhookDisruptor argument: %w", err)
+	}
+
+	disruptor, err := disruptors.NewWebhookDisruptor(ctx, k8s, arg.Kind, arg.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error creating WebhookDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{
+		Disruptor: "webhook",
+		Name:      arg.Kind + "/" + arg.Name,
+	})
+
+	obj, err := buildJsWebhookDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating WebhookDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── NodePoolDisruptor JS API ─────────────────────────────────────────────────
+
+// jsFillerWorkloadFaultInjector wraps the NodePoolDisruptor InjectFillerWorkload method for JS
+type jsFillerWorkloadFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.FillerWorkloadFaultInjector
+}
+
+// InjectFillerWorkload signature: injectFillerWorkload(fault, duration)
+func (p *jsFillerWorkloadFaultInjector) InjectFillerWorkload(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("FillerWorkloadFault and duration are required"))
+	}
+
+	fault := disruptors.FillerWorkloadFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "filler_workload", func() error {
+		return p.FillerWorkloadFaultInjector.InjectFillerWorkload(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsNodePoolDisruptor combines the Disruptor base methods and the filler-workload injector
+type jsNodePoolDisruptor struct {
+	jsDisruptor
+	jsFillerWorkloadFaultInjector
+}
+
+// buildJsNodePoolDisruptor builds a goja object that implements the NodePoolDisruptor API
+func buildJsNodePoolDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.NodePoolDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsNodePoolDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsFillerWorkloadFaultInjector: jsFillerWorkloadFaultInjector{
+			ctx:                         ctx,
+			rt:                          rt,
+			tracker:                     tr,
+			FillerWorkloadFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// nodePoolDisruptorArg is the combined struct used to parse the NodePoolDisruptor constructor argument
+type nodePoolDisruptorArg struct {
+	Namespace string `js:"namespace"`
+}
+
+// NewNodePoolDisruptor creates an instance of a NodePoolDisruptor and returns it as a goja object.
+func NewNodePoolDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	arg := nodePoolDisruptorArg{}
+	if !c.Argument(0).Equals(sobek.Null()) && !sobek.IsUndefined(c.Argument(0)) {
+		if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+			return nil, fmt.Errorf("invalid NodePoolDisruptor argument: %w", err)
+		}
+	}
+
+	disruptor, err := disruptors.NewNodePoolDisruptor(ctx, k8s, arg.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("error creating NodePoolDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{
+		Disruptor: "nodepool",
+		Namespace: arg.Namespace,
+		Name:      "xk6-disruptor-filler",
+	})
+
+	obj, err := buildJsNodePoolDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating NodePoolDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── VirtualServiceDisruptor JS API ───────────────────────────────────────────
+
+// jsVirtualServiceFaultInjector wraps the VirtualServiceDisruptor InjectFaultInjection method for JS
+type jsVirtualServiceFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.VirtualServiceFaultInjector
+}
+
+// InjectFaultInjection signature: injectFaultInjection(fault, duration)
+func (p *jsVirtualServiceFaultInjector) InjectFaultInjection(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("VirtualServiceFaultInjectionFault and duration are required"))
+	}
+
+	fault := disruptors.VirtualServiceFaultInjectionFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "istio_vs_fault_injection", func() error {
+		return p.VirtualServiceFaultInjector.InjectFaultInjection(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsVirtualServiceMisrouteInjector wraps the VirtualServiceDisruptor InjectMisroute method for JS
+type jsVirtualServiceMisrouteInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.VirtualServiceMisrouteInjector
+}
+
+// InjectMisroute signature: injectMisroute(fault, duration)
+func (p *jsVirtualServiceMisrouteInjector) InjectMisroute(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("VirtualServiceMisrouteFault and duration are required"))
+	}
+
+	fault := disruptors.VirtualServiceMisrouteFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "istio_vs_misroute", func() error {
+		return p.VirtualServiceMisrouteInjector.InjectMisroute(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsVirtualServiceDisruptor combines the Disruptor base methods and both VirtualService injectors
+type jsVirtualServiceDisruptor struct {
+	jsDisruptor
+	jsVirtualServiceFaultInjector
+	jsVirtualServiceMisrouteInjector
+}
+
+// buildJsVirtualServiceDisruptor builds a goja object that implements the VirtualServiceDisruptor API
+func buildJsVirtualServiceDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.VirtualServiceDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsVirtualServiceDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsVirtualServiceFaultInjector: jsVirtualServiceFaultInjector{
+			ctx:                         ctx,
+			rt:                          rt,
+			tracker:                     tr,
+			VirtualServiceFaultInjector: disruptor,
+		},
+		jsVirtualServiceMisrouteInjector: jsVirtualServiceMisrouteInjector{
+			ctx:                            ctx,
+			rt:                             rt,
+			tracker:                        tr,
+			VirtualServiceMisrouteInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// istioResourceDisruptorArg is the combined struct used to parse the constructor argument
+// shared by all Istio resource disruptors (VirtualService, DestinationRule,
+// PeerAuthentication, AuthorizationPolicy).
+type istioResourceDisruptorArg struct {
+	Namespace string `js:"namespace"`
+	Name      string `js:"name"`
+}
+
+// NewVirtualServiceDisruptor creates an instance of a VirtualServiceDisruptor and returns it as a goja object.
+func NewVirtualServiceDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("VirtualServiceDisruptor constructor expects a non-null argument")
+	}
+
+	arg := istioResourceDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid VirtualServiceDisruptor argument: %w", err)
+	}
+
+	disruptor, err := disruptors.NewVirtualServiceDisruptor(ctx, k8s, arg.Namespace, arg.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error creating VirtualServiceDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{Disruptor: "virtualservice", Namespace: arg.Namespace, Name: arg.Name})
+
+	obj, err := buildJsVirtualServiceDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating VirtualServiceDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── DestinationRuleDisruptor JS API ──────────────────────────────────────────
+
+// jsDestinationRuleTLSFaultInjector wraps the DestinationRuleDisruptor InjectTLSFault method for JS
+type jsDestinationRuleTLSFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.DestinationRuleTLSFaultInjector
+}
+
+// InjectTLSFault signature: injectTLSFault(fault, duration)
+func (p *jsDestinationRuleTLSFaultInjector) InjectTLSFault(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("DestinationRuleTLSFault and duration are required"))
+	}
+
+	fault := disruptors.DestinationRuleTLSFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "istio_dr_tls", func() error {
+		return p.DestinationRuleTLSFaultInjector.InjectTLSFault(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsDestinationRuleDisruptor combines the Disruptor base methods and the TLS-fault injector
+type jsDestinationRuleDisruptor struct {
+	jsDisruptor
+	jsDestinationRuleTLSFaultInjector
+}
+
+// buildJsDestinationRuleDisruptor builds a goja object that implements the DestinationRuleDisruptor API
+func buildJsDestinationRuleDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.DestinationRuleDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsDestinationRuleDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsDestinationRuleTLSFaultInjector: jsDestinationRuleTLSFaultInjector{
+			ctx:                             ctx,
+			rt:                              rt,
+			tracker:                         tr,
+			DestinationRuleTLSFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// NewDestinationRuleDisruptor creates an instance of a DestinationRuleDisruptor and returns it as a goja object.
+func NewDestinationRuleDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("DestinationRuleDisruptor constructor expects a non-null argument")
+	}
+
+	arg := istioResourceDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid DestinationRuleDisruptor argument: %w", err)
+	}
+
+	disruptor, err := disruptors.NewDestinationRuleDisruptor(ctx, k8s, arg.Namespace, arg.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error creating DestinationRuleDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{Disruptor: "destinationrule", Namespace: arg.Namespace, Name: arg.Name})
+
+	obj, err := buildJsDestinationRuleDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating DestinationRuleDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── PeerAuthenticationDisruptor JS API ───────────────────────────────────────
+
+// jsPeerAuthenticationMTLSFaultInjector wraps the PeerAuthenticationDisruptor InjectMTLSFault method for JS
+type jsPeerAuthenticationMTLSFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.PeerAuthenticationMTLSFaultInjector
+}
+
+// InjectMTLSFault signature: injectMTLSFault(fault, duration)
+func (p *jsPeerAuthenticationMTLSFaultInjector) InjectMTLSFault(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("PeerAuthenticationMTLSFault and duration are required"))
+	}
+
+	fault := disruptors.PeerAuthenticationMTLSFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "istio_pa_mtls", func() error {
+		return p.PeerAuthenticationMTLSFaultInjector.InjectMTLSFault(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsPeerAuthenticationDisruptor combines the Disruptor base methods and the mTLS-fault injector
+type jsPeerAuthenticationDisruptor struct {
+	jsDisruptor
+	jsPeerAuthenticationMTLSFaultInjector
+}
+
+// buildJsPeerAuthenticationDisruptor builds a goja object that implements the PeerAuthenticationDisruptor API
+func buildJsPeerAuthenticationDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.PeerAuthenticationDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsPeerAuthenticationDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsPeerAuthenticationMTLSFaultInjector: jsPeerAuthenticationMTLSFaultInjector{
+			ctx:                                 ctx,
+			rt:                                  rt,
+			tracker:                             tr,
+			PeerAuthenticationMTLSFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// NewPeerAuthenticationDisruptor creates an instance of a PeerAuthenticationDisruptor and returns it as a goja object.
+func NewPeerAuthenticationDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("PeerAuthenticationDisruptor constructor expects a non-null argument")
+	}
+
+	arg := istioResourceDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid PeerAuthenticationDisruptor argument: %w", err)
+	}
+
+	disruptor, err := disruptors.NewPeerAuthenticationDisruptor(ctx, k8s, arg.Namespace, arg.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error creating PeerAuthenticationDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{Disruptor: "peerauthentication", Namespace: arg.Namespace, Name: arg.Name})
+
+	obj, err := buildJsPeerAuthenticationDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating PeerAuthenticationDisruptor: %w", err)
+	}
+
+	return obj, nil
+}
+
+// ── AuthorizationPolicyDisruptor JS API ──────────────────────────────────────
+
+// jsAuthorizationPolicyDenyFaultInjector wraps the AuthorizationPolicyDisruptor InjectDenyFault method for JS
+type jsAuthorizationPolicyDenyFaultInjector struct {
+	ctx     context.Context
+	rt      *sobek.Runtime
+	tracker *tracker
+	disruptors.AuthorizationPolicyDenyFaultInjector
+}
+
+// InjectDenyFault signature: injectDenyFault(fault, duration)
+func (p *jsAuthorizationPolicyDenyFaultInjector) InjectDenyFault(args ...sobek.Value) {
+	if len(args) < 2 {
+		common.Throw(p.rt, fmt.Errorf("AuthorizationPolicyDenyFault and duration are required"))
+	}
+
+	fault := disruptors.AuthorizationPolicyDenyFault{}
+	if err := convertValue(p.rt, args[0], &fault); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid fault argument: %w", err))
+	}
+
+	var duration time.Duration
+	if err := convertValue(p.rt, args[1], &duration); err != nil {
+		common.Throw(p.rt, fmt.Errorf("invalid duration argument: %w", err))
+	}
+
+	err := p.tracker.track(p.ctx, "istio_authz_deny", func() error {
+		return p.AuthorizationPolicyDenyFaultInjector.InjectDenyFault(p.ctx, fault, duration)
+	})
+	if err != nil {
+		common.Throw(p.rt, fmt.Errorf("error injecting fault: %w", err))
+	}
+}
+
+// jsAuthorizationPolicyDisruptor combines the Disruptor base methods and the deny-fault injector
+type jsAuthorizationPolicyDisruptor struct {
+	jsDisruptor
+	jsAuthorizationPolicyDenyFaultInjector
+}
+
+// buildJsAuthorizationPolicyDisruptor builds a goja object that implements the AuthorizationPolicyDisruptor API
+func buildJsAuthorizationPolicyDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	disruptor disruptors.AuthorizationPolicyDisruptor,
+	tr *tracker,
+) (*sobek.Object, error) {
+	d := &jsAuthorizationPolicyDisruptor{
+		jsDisruptor: jsDisruptor{
+			ctx:       ctx,
+			rt:        rt,
+			tracker:   tr,
+			Disruptor: disruptor,
+		},
+		jsAuthorizationPolicyDenyFaultInjector: jsAuthorizationPolicyDenyFaultInjector{
+			ctx:                                  ctx,
+			rt:                                   rt,
+			tracker:                              tr,
+			AuthorizationPolicyDenyFaultInjector: disruptor,
+		},
+	}
+
+	return buildObject(rt, d)
+}
+
+// NewAuthorizationPolicyDisruptor creates an instance of an AuthorizationPolicyDisruptor and returns it as a goja object.
+func NewAuthorizationPolicyDisruptor(
+	ctx context.Context,
+	rt *sobek.Runtime,
+	c sobek.ConstructorCall,
+	k8s kubernetes.Kubernetes,
+	vu modules.VU,
+	m *Metrics,
+) (*sobek.Object, error) {
+	if c.Argument(0).Equals(sobek.Null()) {
+		return nil, fmt.Errorf("AuthorizationPolicyDisruptor constructor expects a non-null argument")
+	}
+
+	arg := istioResourceDisruptorArg{}
+	if err := convertValue(rt, c.Argument(0), &arg); err != nil {
+		return nil, fmt.Errorf("invalid AuthorizationPolicyDisruptor argument: %w", err)
+	}
+
+	disruptor, err := disruptors.NewAuthorizationPolicyDisruptor(ctx, k8s, arg.Namespace, arg.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error creating AuthorizationPolicyDisruptor: %w", err)
+	}
+
+	tr := newTracker(vu, m, TargetInfo{Disruptor: "authorizationpolicy", Namespace: arg.Namespace, Name: arg.Name})
+
+	obj, err := buildJsAuthorizationPolicyDisruptor(ctx, rt, disruptor, tr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating AuthorizationPolicyDisruptor: %w", err)
 	}
 
 	return obj, nil

@@ -11,8 +11,8 @@ import (
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
 
-	"github.com/grafana/sobek"
 	"github.com/go-logr/logr"
+	"github.com/grafana/sobek"
 	"k8s.io/klog/v2"
 
 	"github.com/danhngo-lx/xk6-disruptor/pkg/api"
@@ -79,10 +79,16 @@ func (rm *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 func (m *ModuleInstance) Exports() modules.Exports {
 	return modules.Exports{
 		Named: map[string]interface{}{
-			"PodDisruptor":      m.newPodDisruptor,
-			"ServiceDisruptor":  m.newServiceDisruptor,
-			"NodeDisruptor":     m.newNodeDisruptor,
-			"WorkloadDisruptor": m.newWorkloadDisruptor,
+			"PodDisruptor":                 m.newPodDisruptor,
+			"ServiceDisruptor":             m.newServiceDisruptor,
+			"NodeDisruptor":                m.newNodeDisruptor,
+			"WorkloadDisruptor":            m.newWorkloadDisruptor,
+			"WebhookDisruptor":             m.newWebhookDisruptor,
+			"NodePoolDisruptor":            m.newNodePoolDisruptor,
+			"VirtualServiceDisruptor":      m.newVirtualServiceDisruptor,
+			"DestinationRuleDisruptor":     m.newDestinationRuleDisruptor,
+			"PeerAuthenticationDisruptor":  m.newPeerAuthenticationDisruptor,
+			"AuthorizationPolicyDisruptor": m.newAuthorizationPolicyDisruptor,
 		},
 	}
 }
@@ -133,6 +139,84 @@ func (m *ModuleInstance) newWorkloadDisruptor(c sobek.ConstructorCall) *sobek.Ob
 	disruptor, err := api.NewWorkloadDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
 	if err != nil {
 		common.Throw(rt, fmt.Errorf("error creating WorkloadDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a WebhookDisruptor
+func (m *ModuleInstance) newWebhookDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewWebhookDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating WebhookDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a NodePoolDisruptor
+func (m *ModuleInstance) newNodePoolDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewNodePoolDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating NodePoolDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a VirtualServiceDisruptor
+func (m *ModuleInstance) newVirtualServiceDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewVirtualServiceDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating VirtualServiceDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a DestinationRuleDisruptor
+func (m *ModuleInstance) newDestinationRuleDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewDestinationRuleDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating DestinationRuleDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of a PeerAuthenticationDisruptor
+func (m *ModuleInstance) newPeerAuthenticationDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewPeerAuthenticationDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating PeerAuthenticationDisruptor: %w", err))
+	}
+
+	return disruptor
+}
+
+// creates an instance of an AuthorizationPolicyDisruptor
+func (m *ModuleInstance) newAuthorizationPolicyDisruptor(c sobek.ConstructorCall) *sobek.Object {
+	rt := m.vu.Runtime()
+	ctx := m.vu.Context()
+
+	disruptor, err := api.NewAuthorizationPolicyDisruptor(ctx, rt, c, m.k8s, m.vu, m.metrics)
+	if err != nil {
+		common.Throw(rt, fmt.Errorf("error creating AuthorizationPolicyDisruptor: %w", err))
 	}
 
 	return disruptor

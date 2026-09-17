@@ -8,7 +8,7 @@ The agent offers a series of commands that inject different types of disruptions
 
 ## Disruptors
 
-Disruptors are the top-level objects exposed to k6 scripts. Three disruptors are available: `PodDisruptor`, `ServiceDisruptor`, and `NodeDisruptor`.
+Disruptors are the top-level objects exposed to k6 scripts: `PodDisruptor`, `ServiceDisruptor`, `NodeDisruptor`, `WorkloadDisruptor`, `WebhookDisruptor`, `NodePoolDisruptor`, `VirtualServiceDisruptor`, `DestinationRuleDisruptor`, `PeerAuthenticationDisruptor`, and `AuthorizationPolicyDisruptor`.
 
 `PodDisruptor` and `ServiceDisruptor` are backed by the ephemeral agent container (`xk6-agent`) injected into target pods. `NodeDisruptor` uses two models: pure Kubernetes API calls (for drain and taint) and a privileged helper pod on the target node (for resource stress and kubelet kill).
 
@@ -168,11 +168,11 @@ Deletes a subset of the disruptor's target pods. Kubernetes will restart them ac
 | Field     | Type               | Default | Description                                                           |
 | --------- | ------------------ | ------- | --------------------------------------------------------------------- |
 | `count`   | `number \| string` | —       | Number of pods to terminate, or a percentage string (e.g. `"50%"`).   |
-| `timeout` | `duration`         | `"10s"` | How long to wait for each pod to terminate before returning an error. |
+| `timeout` | `number` (ms)      | `10000` | How long to wait for each pod to terminate before returning an error. |
 
 ```js
 // Terminate 1 pod and wait up to 30s for it to stop
-disruptor.terminatePods({ count: 1, timeout: "30s" });
+disruptor.terminatePods({ count: 1, timeout: 30000 });
 
 // Terminate 50% of target pods
 disruptor.terminatePods({ count: "50%" });
@@ -463,6 +463,10 @@ disruptor.injectIOStress({ path: "/data", workers: 8, bytesPerWorker: 50 * 1024 
 | Can cause eviction | Yes (if > ephemeral-storage limit) | No                                    |
 | Can target PVC     | Yes                                | Yes                                   |
 
+> "PVC full" (ENOSPC) is approximated by pointing `injectDiskFill`'s `path` at a PVC mount — see the [README](../../README.md#io-stress). A stuck volume attach/detach (CSI/cloud-control-plane level) is out of scope: this agent only reaches the target pod's namespace, not the CSI controller.
+
+Datastore faults (MongoDB/Postgres/Redis/Cosmos DB) have no dedicated fault type either — they are composed from `injectNetworkFaults`/`injectNetworkShapingFaults`/`injectNetworkPartition`/`injectDNSFaults` targeting the datastore pod or the managed endpoint's IP/FQDN. See the [README](../../README.md#datastore-faults-mongodb--postgresql--redis--cosmos-db) for worked examples. True in-database data corruption is explicitly out of scope for the agent (no DB credentials/write path) — do that from k6 `setup()`/`teardown()` with the real DB driver instead.
+
 ---
 
 ## HTTP Fault Options
@@ -537,8 +541,9 @@ This approach bypasses the service address, so it is only suitable when the k6 s
 
 | Field            | Type                                 | Required                      | Description                                                                           |
 | ---------------- | ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------- |
-| `name`           | `string`                             | Yes (exclusive with `select`) | Exact node name to target                                                             |
-| `select`         | `{ labels: Record<string, string> }` | Yes (exclusive with `name`)   | Label selector — targets all matching nodes                                           |
+| `name`           | `string`                             | Exactly one of `name`/`select`/`zone` | Exact node name to target                                                             |
+| `select`         | `{ labels: Record<string, string> }` | Exactly one of `name`/`select`/`zone` | Label selector — targets all matching nodes                                           |
+| `zone`           | `string`                             | Exactly one of `name`/`select`/`zone` | Targets every node labeled `topology.kubernetes.io/zone=<zone>` — approximates an "AZ down" fault (compute only; see caveat below) |
 | `agentImage`     | `string`                             | No                            | Container image for the privileged helper pod (same resolution order as PodDisruptor) |
 | `agentNamespace` | `string`                             | No                            | Namespace where helper pods are created (default `"kube-system"`)                     |
 | `injectTimeout`  | `string \| number`                   | No                            | Time budget for the helper pod to start (default `"30s"`)                             |
@@ -554,7 +559,13 @@ const disruptor = new NodeDisruptor({
   select: { labels: { "node-role.kubernetes.io/worker": "" } },
   agentNamespace: "kube-system",
 });
+
+// By availability zone (implementation: pkg/disruptors/node.go's ZoneLabelKey
+// constant, translated to a labelSelector in pkg/api/api.go's NewNodeDisruptor)
+const disruptor = new NodeDisruptor({ zone: "us-east-1a" });
 ```
+
+> **AZ-down caveat:** `zone` only removes compute capacity (via `drain`/`taintNode`) in the labeled zone. It does not affect zonal storage, load balancers, or the cloud control plane — a full zonal outage is out of scope for this agent.
 
 ### `drain(fault, duration)`
 
@@ -566,7 +577,7 @@ Cordons the node (marks it unschedulable), evicts all eligible pods, waits for `
 | ----------------- | ------------- | -------- | ----------------------------------------------------------- |
 | `skipDaemonSets`  | `boolean`     | `false`  | Skip DaemonSet-owned pods during eviction                   |
 | `deleteLocalData` | `boolean`     | `false`  | Evict pods with local storage (emptyDir / hostPath volumes) |
-| `timeout`         | `duration`    | `"5m"`   | Per-pod eviction timeout (Go duration string, e.g. `"5m"`)  |
+| `timeout`         | `number` (ms) | `300000` | Per-pod eviction timeout                                    |
 
 ```js
 disruptor.drain({ skipDaemonSets: true }, "120s");
@@ -633,6 +644,42 @@ A `ClusterRole` (not a namespaced `Role`) is required for node access since node
 
 ---
 
+## Cluster-scoped, pure-API disruptors
+
+`WebhookDisruptor`, `NodePoolDisruptor`, `VirtualServiceDisruptor`, `DestinationRuleDisruptor`, `PeerAuthenticationDisruptor`, and `AuthorizationPolicyDisruptor` share a fourth execution model, alongside PodDisruptor's proxy/iptables model and NodeDisruptor's Model A/Model B:
+
+- **Model C — pure control-plane API, no agent exec:** the disruptor reads and writes a single Kubernetes (or CRD) object directly — no ephemeral container, no privileged pod, no CLI subcommand in `cmd/agent/commands/`. This is the same model `WorkloadDisruptor.ScaleReplicas` and `NodeDisruptor.Drain`/`TaintNode` already use. Fault application follows: snapshot the current object → mutate a copy → `Update` → wait for `duration` (or context cancellation) → `Update` the original snapshot back. `Cleanup()` is a no-op on these disruptors since the fault method itself always restores state before returning.
+
+Because there is no agent exec involved, adding a fault type in this family **skips the visitor-command (`pkg/disruptors/commads.go`) and CLI-subcommand (`cmd/agent/commands/`) layers** that pod/node faults need — only the `pkg/disruptors` struct/interface, the JS proxy in `pkg/api/api.go`, and metrics wiring (see [Adding metrics to a new fault type](#adding-metrics-to-a-new-fault-type)) are needed.
+
+### WebhookDisruptor
+
+Patches `admissionregistration.k8s.io/v1` `MutatingWebhookConfiguration`/`ValidatingWebhookConfiguration` objects directly via the existing typed `kubernetes.Interface` (`k8s.Client().AdmissionregistrationV1()`) — no new dependency. Implementation: `pkg/disruptors/webhook.go`.
+
+To simulate a slow/unresponsive webhook instead of a misconfigured one, point an existing `PodDisruptor` at the webhook's own backing pods (e.g. `injectNetworkFaults`/`injectCPUStress`) — no new code needed for that case.
+
+### NodePoolDisruptor
+
+Creates a throwaway, low-priority filler `Deployment` (pause-container image, sized via `resources.requests`) to consume a node pool's allocatable capacity, then deletes it. Implementation: `pkg/disruptors/nodepool.go` (fault definition) and `pkg/kubernetes/helpers/workloads.go`'s `CreateFiller`/`DeleteFiller` (extends the existing `WorkloadHelper`).
+
+This complements — rather than replaces — `NodeDisruptor`'s node-level CPU/memory/IO stress (noisy-neighbour pressure on nodes that already have spare capacity) and `taintNode` (blocks new scheduling outright regardless of capacity).
+
+### Istio Disruptors
+
+`VirtualServiceDisruptor`, `DestinationRuleDisruptor`, `PeerAuthenticationDisruptor`, and `AuthorizationPolicyDisruptor` mutate Istio's own CRDs (`networking.istio.io`, `security.istio.io`) through a generic `k8s.io/client-go/dynamic` client rather than a typed Istio clientset — this was a deliberate dependency trade-off (see below).
+
+**Implementation:**
+
+- `pkg/kubernetes/kubernetes.go` — `Kubernetes.DynamicClient() dynamic.Interface`, backed by `dynamic.NewForConfig` in `NewFromConfig`. `pkg/kubernetes/fake.go`'s `FakeKubernetes` backs it with `k8s.io/client-go/dynamic/fake`; `NewFakeKubernetesWithDynamicObjects` seeds it with pre-existing unstructured objects for tests.
+- `pkg/kubernetes/helpers/istio.go` — hardcoded `schema.GroupVersionResource` constants (`VirtualServiceGVR`, `DestinationRuleGVR`, `PeerAuthenticationGVR`, `AuthorizationPolicyGVR`). These are hardcoded rather than discovered because there is no typed Istio clientset to source them from — if the cluster's Istio CRD version ever changes, this is the one place to update.
+- `pkg/disruptors/istio.go` — a shared unexported `istioTarget` (resolves a named/namespaced resource, implements `Targets`/`TargetIPs`/`Cleanup`, and `applyPatchForDuration` for the snapshot → patch → wait → restore lifecycle via `unstructured.Unstructured`) is embedded into four exported disruptor types, one per Istio CRD kind. Each fault method builds its own `mutate func(*unstructured.Unstructured) error` using `unstructured.NestedSlice`/`SetNestedField`/`SetNestedSlice`.
+
+**Dependency trade-off:** `k8s.io/client-go/dynamic` (+ `dynamic/fake` for tests) ships as part of the `k8s.io/client-go` module already required by `go.mod` — no new go.mod entry. The alternative, a typed `istio.io/client-go` clientset, would give compile-time field safety at the cost of pinning a specific Istio API version (needing a bump whenever the target cluster's Istio version changes) and a heavier dependency tree. Field access here is consequently untyped (`map[string]any` under `unstructured.Unstructured.Object`) — mistyped field paths fail at runtime, not compile time.
+
+**Adding a new Istio fault:** add the CRD's GVR constant to `pkg/kubernetes/helpers/istio.go` if it targets a new kind; otherwise reuse an existing `istioTarget`-embedding disruptor and add a new `Inject*` method that calls `applyPatchForDuration` with a `mutate` function operating on `obj.Object`. Then wire the JS proxy in `pkg/api/api.go` (mirror `jsVirtualServiceFaultInjector`) and register the constructor in `disruptor.go`'s `Exports()`.
+
+---
+
 ## Agent Image Configuration
 
 The agent container image is resolved in the following priority order (first match wins):
@@ -691,6 +738,8 @@ The `xk6-disruptor-agent` binary exposes the following subcommands, each corresp
 | `dns`               | Intercept DNS queries; return NXDOMAIN or spoofed IPs via an embedded DNS proxy                        |
 | `kubelet-kill`      | Stop the kubelet systemd service via nsenter, wait for duration, then restart it (privileged pod only) |
 | `cleanup`           | Terminate the running agent and clean up any installed resources                                       |
+
+`WorkloadDisruptor`'s replica-change fault and every [cluster-scoped, pure-API disruptor](#cluster-scoped-pure-api-disruptors) (`WebhookDisruptor`, `NodePoolDisruptor`, and the Istio disruptors) have **no corresponding subcommand** here — they never exec into the agent binary; they act on the Kubernetes API directly from the k6 process.
 
 ## Metrics
 

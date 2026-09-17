@@ -9,6 +9,7 @@ import (
 	"github.com/danhngo-lx/xk6-disruptor/pkg/kubernetes/helpers"
 
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -19,6 +20,9 @@ import (
 type Kubernetes interface {
 	// Client returns a Kubernetes client
 	Client() kubernetes.Interface
+	// DynamicClient returns a dynamic client for accessing CRDs (e.g. Istio resources)
+	// that have no typed clientset in this module.
+	DynamicClient() dynamic.Interface
 	// ServiceHelper returns a helpers.ServiceHelper scoped for the given namespace
 	ServiceHelper(namespace string) helpers.ServiceHelper
 	// PodHelper returns a helpers.PodHelper scoped for the given namespace
@@ -31,7 +35,8 @@ type Kubernetes interface {
 
 // k8s Holds the reference to the helpers for interacting with kubernetes
 type k8s struct {
-	config *rest.Config
+	config  *rest.Config
+	dynamic dynamic.Interface
 	kubernetes.Interface
 }
 
@@ -48,6 +53,11 @@ func NewFromConfig(config *rest.Config) (Kubernetes, error) {
 		return nil, err
 	}
 
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
 	err = checkK8sVersion(config)
 	if err != nil {
 		return nil, err
@@ -55,6 +65,7 @@ func NewFromConfig(config *rest.Config) (Kubernetes, error) {
 
 	return &k8s{
 		config:    config,
+		dynamic:   dynamicClient,
 		Interface: client,
 	}, nil
 }
@@ -131,6 +142,11 @@ func (k *k8s) PodHelper(namespace string) helpers.PodHelper {
 
 func (k *k8s) Client() kubernetes.Interface {
 	return k.Interface
+}
+
+// DynamicClient returns a dynamic client for accessing CRDs with no typed clientset.
+func (k *k8s) DynamicClient() dynamic.Interface {
+	return k.dynamic
 }
 
 // NodeHelper returns a NodeHelper for cluster-wide node operations
